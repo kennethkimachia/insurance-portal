@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ROUTES } from "@/lib/routes";
-import { OrgSwitcher } from "@/components/navigation/header/org-switcher";
+import { OrgSwitcher } from "@/components/navigation/org-switcher";
 import { NAV_ITEMS } from "@/components/navigation/header/header";
 import {
   Sidebar,

@@ -19,7 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { OrgSwitcher } from "@/components/navigation/header/org-switcher";
+import { OrgSwitcher } from "@/components/navigation/org-switcher";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
   LayoutDashboard,
