@@ -1,9 +1,8 @@
-"use client";
-
 import { SystemOverview } from "@/components/dashboard/admin/system-overview";
 import { ManageOrganizations } from "@/components/dashboard/admin/manage-organizations";
 import { ManageAgents } from "@/components/dashboard/admin/manage-agents";
 import { AgentOrgAssignments } from "@/components/dashboard/admin/agent-org-assignments";
+import { getOrganizations } from "@/app/actions/admin/manage-organization";
 
 // ── Mock Data ───────────────────────────────────────────────────────────
 
@@ -13,33 +12,6 @@ const mockStats = {
   totalClaims: 47,
   pendingInvitations: 2,
 };
-
-const mockOrganizations = [
-  {
-    id: "org-1",
-    name: "ABC Insurance",
-    code: "ABC",
-    agentCount: 4,
-    claimCount: 28,
-    createdAt: "2025-06-15",
-  },
-  {
-    id: "org-2",
-    name: "SafeGuard Underwriters",
-    code: "SGU",
-    agentCount: 3,
-    claimCount: 15,
-    createdAt: "2025-09-01",
-  },
-  {
-    id: "org-3",
-    name: "PanAfrica Cover",
-    code: "PAC",
-    agentCount: 1,
-    claimCount: 4,
-    createdAt: "2026-01-10",
-  },
-];
 
 const mockAgents = [
   {
@@ -199,13 +171,14 @@ const agentOptions = mockAgents
   .filter((a) => a.role !== "admin")
   .map((a) => ({ id: a.id, name: a.name, email: a.email }));
 
-const orgOptions = mockOrganizations.map((o) => ({
-  id: o.id,
-  name: o.name,
-  code: o.code,
-}));
+export default async function AdminDashboard() {
+  const orgs = await getOrganizations();
 
-export default function AdminDashboard() {
+  const orgOptions = orgs.map((o) => ({
+    id: o.id,
+    name: o.name,
+    code: o.code,
+  }));
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -224,7 +197,7 @@ export default function AdminDashboard() {
 
         {/* Organizations + Agents */}
         <div className="mt-6 grid gap-6 lg:grid-cols-2">
-          <ManageOrganizations organizations={mockOrganizations} />
+          <ManageOrganizations organizations={orgs} />
           <ManageAgents agents={mockAgents} invitations={mockInvitations} />
         </div>
 

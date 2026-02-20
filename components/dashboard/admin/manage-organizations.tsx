@@ -9,8 +9,10 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Building2, Plus, Copy, CheckCircle2 } from "lucide-react";
-import { useState } from "react";
+import { Building2, Plus, Copy, CheckCircle2, Loader2 } from "lucide-react";
+import { useState, useTransition } from "react";
+import { createOrganization } from "@/app/actions/admin/manage-organization";
+import { toast } from "sonner";
 
 interface Organization {
   id: string;
@@ -33,23 +35,45 @@ export function ManageOrganizations({
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
 
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || !code.trim()) return;
 
-    const newOrg: Organization = {
-      id: `org-${Date.now()}`,
-      name: name.trim(),
-      code: code.trim().toUpperCase(),
-      agentCount: 0,
-      claimCount: 0,
-      createdAt: new Date().toISOString(),
-    };
-    setOrgs((prev) => [newOrg, ...prev]);
-    setName("");
-    setCode("");
-    setShowForm(false);
+    setFieldErrors({});
+
+    const formData = new FormData();
+    formData.append("name", name.trim());
+    formData.append("code", code.trim().toUpperCase());
+
+    startTransition(async () => {
+      const result = await createOrganization(formData);
+
+      if (!result.success) {
+        if (result.fieldErrors) {
+          setFieldErrors(result.fieldErrors as Record<string, string[]>);
+        }
+        toast.error(result.error || "Failed to create organization");
+        return;
+      }
+
+      const newOrg: Organization = {
+        id: result.organization!.id,
+        name: result.organization!.name,
+        code: result.organization!.code,
+        agentCount: 0,
+        claimCount: 0,
+        createdAt: result.organization!.createdAt.toISOString(),
+      };
+
+      setOrgs((prev) => [newOrg, ...prev]);
+      setName("");
+      setCode("");
+      setShowForm(false);
+      toast.success(`Organization "${newOrg.name}" created successfully`);
+    });
   }
 
   function handleCopyCode(orgId: string, orgCode: string) {
@@ -100,9 +124,15 @@ export function ManageOrganizations({
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="flex h-9 w-full rounded-lg border border-input bg-transparent px-3 py-1 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  disabled={isPending}
+                  className="flex h-9 w-full rounded-lg border border-input bg-transparent px-3 py-1 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                   placeholder="e.g. ABC Insurance"
                 />
+                {fieldErrors.name && (
+                  <p className="text-xs text-destructive">
+                    {fieldErrors.name[0]}
+                  </p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-foreground">
@@ -113,9 +143,15 @@ export function ManageOrganizations({
                   value={code}
                   onChange={(e) => setCode(e.target.value.toUpperCase())}
                   maxLength={20}
-                  className="flex h-9 w-full rounded-lg border border-input bg-transparent px-3 py-1 text-sm font-mono text-foreground transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  disabled={isPending}
+                  className="flex h-9 w-full rounded-lg border border-input bg-transparent px-3 py-1 text-sm font-mono text-foreground transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                   placeholder="e.g. ABC"
                 />
+                {fieldErrors.code && (
+                  <p className="text-xs text-destructive">
+                    {fieldErrors.code[0]}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex justify-end gap-2">
@@ -123,16 +159,27 @@ export function ManageOrganizations({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setShowForm(false)}
+                onClick={() => {
+                  setShowForm(false);
+                  setFieldErrors({});
+                }}
+                disabled={isPending}
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
                 size="sm"
-                disabled={!name.trim() || !code.trim()}
+                disabled={!name.trim() || !code.trim() || isPending}
               >
-                Create Organization
+                {isPending ? (
+                  <>
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    Creating…
+                  </>
+                ) : (
+                  "Create Organization"
+                )}
               </Button>
             </div>
           </form>
