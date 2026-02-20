@@ -71,6 +71,7 @@ async function main() {
   });
 
   await db.insert(account).values({
+    id: randomUUID(),
     accountId: userId,
     providerId: "credential",
     userId: userId,

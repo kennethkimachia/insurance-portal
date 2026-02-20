@@ -6,6 +6,7 @@ import {
 } from "better-auth/next-js";
 
 export const auth = betterAuth({
+  baseURL: process.env.BETTER_AUTH_BASE_URL,
   database: drizzleAdapter(db, {
     provider: "pg",
   }),
