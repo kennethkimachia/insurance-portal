@@ -17,7 +17,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { UserPlus, Users, Mail, Shield } from "lucide-react";
-import { useState } from "react";
+import { useTransition, useState } from "react";
+import { inviteAgent } from "@/app/actions/admin/manage-agents";
+import { toast } from "sonner";
 
 type UserRole = "admin" | "head_agent" | "agent";
 
@@ -66,22 +68,35 @@ export function ManageAgents({
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<UserRole | "">("");
   const [tab, setTab] = useState<"agents" | "invitations">("agents");
+  const [isPending, startTransition] = useTransition();
 
   function handleInvite(e: React.FormEvent) {
     e.preventDefault();
     if (!inviteEmail.trim() || !inviteRole) return;
 
-    const newInvite: PendingInvite = {
-      id: `inv-${Date.now()}`,
-      email: inviteEmail.trim(),
-      role: inviteRole as UserRole,
-      status: "pending",
-      createdAt: new Date().toISOString(),
-    };
-    setInvites((prev) => [newInvite, ...prev]);
-    setInviteEmail("");
-    setInviteRole("");
-    setShowInvite(false);
+    startTransition(async () => {
+      const response = await inviteAgent({
+        email: inviteEmail.trim(),
+        role: inviteRole,
+      });
+
+      if (response.success) {
+        const newInvite: PendingInvite = {
+          id: `inv-${Date.now()}`,
+          email: inviteEmail.trim(),
+          role: inviteRole as UserRole,
+          status: "pending",
+          createdAt: new Date().toISOString(),
+        };
+        setInvites((prev) => [newInvite, ...prev]);
+        setInviteEmail("");
+        setInviteRole("");
+        setShowInvite(false);
+        toast.success(`Invitation sent to ${inviteEmail.trim()}`);
+      } else {
+        toast.error(response.error || "Failed to send invitation");
+      }
+    });
   }
 
   return (
@@ -165,9 +180,9 @@ export function ManageAgents({
               <Button
                 type="submit"
                 size="sm"
-                disabled={!inviteEmail.trim() || !inviteRole}
+                disabled={!inviteEmail.trim() || !inviteRole || isPending}
               >
-                Send Invitation
+                {isPending ? "Sending..." : "Send Invitation"}
               </Button>
             </div>
           </form>
