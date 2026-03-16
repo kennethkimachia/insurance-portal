@@ -170,7 +170,7 @@ export default function SignUp() {
                         toast.error(ctx.error.message);
                       },
                       onSuccess: () => {
-                        router.push("/dashboard");
+                        window.location.href = "/dashboard";
                       },
                     },
                   });
