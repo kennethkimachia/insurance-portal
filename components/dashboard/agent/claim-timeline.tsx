@@ -8,13 +8,14 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, Send, User } from "lucide-react";
-import { useState } from "react";
+import { MessageSquare, Send, User, Loader2 } from "lucide-react";
+import { useState, useTransition } from "react";
+import { addClaimNote } from "@/app/actions/agent/manage-claims";
 
 interface TimelineEntry {
   id: string;
   author: string;
-  role: "agent" | "system";
+  role: "agent" | "system" | "user" | "head_agent" | "admin";
   content: string;
   createdAt: string;
 }
@@ -23,29 +24,50 @@ interface ClaimTimelineProps {
   claimNumber: string;
   entries: TimelineEntry[];
   agentName?: string;
+  claimId?: string;
 }
 
 export function ClaimTimeline({
   claimNumber,
   entries: initialEntries,
   agentName = "You",
+  claimId,
 }: ClaimTimelineProps) {
   const [entries, setEntries] = useState(initialEntries);
   const [message, setMessage] = useState("");
+  const [isPending, startTransition] = useTransition();
 
   function handlePost() {
     if (!message.trim()) return;
 
-    const newEntry: TimelineEntry = {
-      id: `note-${Date.now()}`,
-      author: agentName,
-      role: "agent",
-      content: message.trim(),
-      createdAt: new Date().toISOString(),
-    };
+    const content = message.trim();
 
-    setEntries((prev) => [...prev, newEntry]);
-    setMessage("");
+    if (claimId) {
+      startTransition(async () => {
+        const result = await addClaimNote(claimId, content);
+        if (result.success) {
+          const newEntry: TimelineEntry = {
+            id: `note-${Date.now()}`,
+            author: agentName,
+            role: "agent",
+            content,
+            createdAt: new Date().toISOString(),
+          };
+          setEntries((prev) => [...prev, newEntry]);
+          setMessage("");
+        }
+      });
+    } else {
+      const newEntry: TimelineEntry = {
+        id: `note-${Date.now()}`,
+        author: agentName,
+        role: "agent",
+        content,
+        createdAt: new Date().toISOString(),
+      };
+      setEntries((prev) => [...prev, newEntry]);
+      setMessage("");
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -132,10 +154,14 @@ export function ClaimTimeline({
           <Button
             size="sm"
             className="self-end"
-            disabled={!message.trim()}
+            disabled={!message.trim() || isPending}
             onClick={handlePost}
           >
-            <Send className="h-4 w-4" />
+            {isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
           </Button>
         </div>
       </CardContent>

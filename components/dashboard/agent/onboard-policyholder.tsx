@@ -15,15 +15,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserPlus, CheckCircle2, Upload } from "lucide-react";
-import { useState } from "react";
+import { UserPlus, CheckCircle2, Upload, Loader2 } from "lucide-react";
+import { useState, useTransition } from "react";
+import { onboardPolicyholder } from "@/app/actions/agent/onboard-policyholder";
 
 interface OnboardPolicyholderProps {
   organizationName?: string;
+  organizationId?: string;
 }
 
 export function OnboardPolicyholder({
   organizationName = "ABC Insurance",
+  organizationId,
 }: OnboardPolicyholderProps) {
   const [formData, setFormData] = useState({
     fullName: "",
@@ -34,15 +37,41 @@ export function OnboardPolicyholder({
   const [idFile, setIdFile] = useState<File | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [generatedPolicy, setGeneratedPolicy] = useState("");
+  const [policyholderName, setPolicyholderName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // Mock: generate a policy number
-    const num = Math.floor(10000 + Math.random() * 90000);
-    setGeneratedPolicy(
-      `POL-${organizationName.slice(0, 3).toUpperCase()}-${num}`,
-    );
-    setSubmitted(true);
+    setError(null);
+
+    if (organizationId) {
+      startTransition(async () => {
+        const fd = new FormData();
+        fd.set("fullName", formData.fullName);
+        fd.set("email", formData.email);
+        fd.set("phone", formData.phone);
+        fd.set("policyType", formData.policyType);
+        fd.set("organizationId", organizationId);
+
+        const result = await onboardPolicyholder(fd);
+        if (result.success && result.policyNumber) {
+          setGeneratedPolicy(result.policyNumber);
+          setPolicyholderName(result.policyholderName || formData.fullName);
+          setSubmitted(true);
+        } else {
+          setError(result.error || "Something went wrong");
+        }
+      });
+    } else {
+      // Fallback mock behavior when no org is provided
+      const num = Math.floor(10000 + Math.random() * 90000);
+      setGeneratedPolicy(
+        `POL-${organizationName.slice(0, 3).toUpperCase()}-${num}`,
+      );
+      setPolicyholderName(formData.fullName);
+      setSubmitted(true);
+    }
   }
 
   function handleReset() {
@@ -50,6 +79,8 @@ export function OnboardPolicyholder({
     setIdFile(null);
     setSubmitted(false);
     setGeneratedPolicy("");
+    setPolicyholderName("");
+    setError(null);
   }
 
   const isValid =
@@ -71,7 +102,7 @@ export function OnboardPolicyholder({
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
               <span className="font-semibold text-foreground">
-                {formData.fullName}
+                {policyholderName}
               </span>{" "}
               has been registered successfully.
             </p>
@@ -205,8 +236,18 @@ export function OnboardPolicyholder({
             </label>
           </div>
 
-          <Button type="submit" className="w-full" disabled={!isValid}>
-            Register Policyholder
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
+              <p className="text-xs font-medium text-destructive">{error}</p>
+            </div>
+          )}
+
+          <Button type="submit" className="w-full" disabled={!isValid || isPending}>
+            {isPending ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Registering...</>
+            ) : (
+              "Register Policyholder"
+            )}
           </Button>
         </form>
       </CardContent>

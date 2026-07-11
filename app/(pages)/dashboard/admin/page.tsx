@@ -3,182 +3,137 @@ import { ManageOrganizations } from "@/components/dashboard/admin/manage-organiz
 import { ManageAgents } from "@/components/dashboard/admin/manage-agents";
 import { AgentOrgAssignments } from "@/components/dashboard/admin/agent-org-assignments";
 import { getOrganizations } from "@/app/actions/admin/manage-organization";
-
-// ── Mock Data ───────────────────────────────────────────────────────────
-
-const mockStats = {
-  totalOrganizations: 3,
-  totalAgents: 8,
-  totalClaims: 47,
-  pendingInvitations: 2,
-};
-
-const mockAgents = [
-  {
-    id: "a1",
-    name: "James Kariuki",
-    email: "james@abcinsurance.co.ke",
-    role: "head_agent" as const,
-    organizationName: "ABC Insurance",
-    createdAt: "2025-07-01",
-  },
-  {
-    id: "a2",
-    name: "Wanjiku Mwangi",
-    email: "wanjiku@abcinsurance.co.ke",
-    role: "agent" as const,
-    organizationName: "ABC Insurance",
-    createdAt: "2025-07-15",
-  },
-  {
-    id: "a3",
-    name: "Brian Ochieng",
-    email: "brian@abcinsurance.co.ke",
-    role: "agent" as const,
-    organizationName: "ABC Insurance",
-    createdAt: "2025-08-01",
-  },
-  {
-    id: "a4",
-    name: "Amina Hassan",
-    email: "amina@safeguard.co.ke",
-    role: "head_agent" as const,
-    organizationName: "SafeGuard Underwriters",
-    createdAt: "2025-09-15",
-  },
-  {
-    id: "a5",
-    name: "David Njoroge",
-    email: "david@safeguard.co.ke",
-    role: "agent" as const,
-    organizationName: "SafeGuard Underwriters",
-    createdAt: "2025-10-01",
-  },
-  {
-    id: "a6",
-    name: "Faith Kamau",
-    email: "faith@safeguard.co.ke",
-    role: "agent" as const,
-    organizationName: "SafeGuard Underwriters",
-    createdAt: "2025-10-15",
-  },
-  {
-    id: "a7",
-    name: "Kevin Maina",
-    email: "kevin@panafrica.co.ke",
-    role: "agent" as const,
-    organizationName: "PanAfrica Cover",
-    createdAt: "2026-01-20",
-  },
-  {
-    id: "a8",
-    name: "System Admin",
-    email: "admin@portal.co.ke",
-    role: "admin" as const,
-    createdAt: "2025-06-01",
-  },
-];
-
-const mockInvitations = [
-  {
-    id: "inv-1",
-    email: "lucy@abcinsurance.co.ke",
-    role: "agent" as const,
-    status: "pending" as const,
-    createdAt: "2026-02-16",
-  },
-  {
-    id: "inv-2",
-    email: "tom@panafrica.co.ke",
-    role: "head_agent" as const,
-    status: "pending" as const,
-    createdAt: "2026-02-17",
-  },
-  {
-    id: "inv-3",
-    email: "john@safeguard.co.ke",
-    role: "agent" as const,
-    status: "accepted" as const,
-    createdAt: "2026-01-20",
-  },
-];
-
-const mockAssignments = [
-  {
-    id: "asgn-1",
-    agentId: "a1",
-    agentName: "James Kariuki",
-    agentEmail: "james@abcinsurance.co.ke",
-    organizationId: "org-1",
-    organizationName: "ABC Insurance",
-    organizationCode: "ABC",
-    createdAt: "2025-07-01",
-  },
-  {
-    id: "asgn-2",
-    agentId: "a2",
-    agentName: "Wanjiku Mwangi",
-    agentEmail: "wanjiku@abcinsurance.co.ke",
-    organizationId: "org-1",
-    organizationName: "ABC Insurance",
-    organizationCode: "ABC",
-    createdAt: "2025-07-15",
-  },
-  {
-    id: "asgn-3",
-    agentId: "a3",
-    agentName: "Brian Ochieng",
-    agentEmail: "brian@abcinsurance.co.ke",
-    organizationId: "org-1",
-    organizationName: "ABC Insurance",
-    organizationCode: "ABC",
-    createdAt: "2025-08-01",
-  },
-  {
-    id: "asgn-4",
-    agentId: "a4",
-    agentName: "Amina Hassan",
-    agentEmail: "amina@safeguard.co.ke",
-    organizationId: "org-2",
-    organizationName: "SafeGuard Underwriters",
-    organizationCode: "SGU",
-    createdAt: "2025-09-15",
-  },
-  {
-    id: "asgn-5",
-    agentId: "a5",
-    agentName: "David Njoroge",
-    agentEmail: "david@safeguard.co.ke",
-    organizationId: "org-2",
-    organizationName: "SafeGuard Underwriters",
-    organizationCode: "SGU",
-    createdAt: "2025-10-01",
-  },
-  {
-    id: "asgn-6",
-    agentId: "a7",
-    agentName: "Kevin Maina",
-    agentEmail: "kevin@panafrica.co.ke",
-    organizationId: "org-3",
-    organizationName: "PanAfrica Cover",
-    organizationCode: "PAC",
-    createdAt: "2026-01-20",
-  },
-];
-
-// Simplified agent/org lists for the assignment selector
-const agentOptions = mockAgents
-  .filter((a) => a.role !== "admin")
-  .map((a) => ({ id: a.id, name: a.name, email: a.email }));
+import { db } from "@/db";
+import {
+  user,
+  organizations,
+  agentOrganizations,
+  claims,
+  invitations,
+} from "@/db/schema";
+import { eq, sql, desc, and, or } from "drizzle-orm";
 
 export default async function AdminDashboard() {
   const orgs = await getOrganizations();
+
+  // Fetch real agents
+  const agents = await db
+    .select({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      createdAt: user.createdAt,
+    })
+    .from(user)
+    .where(or(eq(user.role, "agent"), eq(user.role, "head_agent"), eq(user.role, "admin")))
+    .orderBy(desc(user.createdAt));
+
+  // Get organization names for each agent
+  const agentsWithOrgs = await Promise.all(
+    agents.map(async (agent) => {
+      if (agent.role === "admin") {
+        return {
+          id: agent.id,
+          name: agent.name,
+          email: agent.email,
+          role: agent.role as "admin" | "head_agent" | "agent",
+          organizationName: undefined,
+          createdAt: agent.createdAt.toISOString().split("T")[0],
+        };
+      }
+
+      const [agentOrg] = await db
+        .select({ name: organizations.name })
+        .from(agentOrganizations)
+        .innerJoin(
+          organizations,
+          eq(organizations.id, agentOrganizations.organizationId)
+        )
+        .where(eq(agentOrganizations.agentId, agent.id))
+        .limit(1);
+
+      return {
+        id: agent.id,
+        name: agent.name,
+        email: agent.email,
+        role: agent.role as "admin" | "head_agent" | "agent",
+        organizationName: agentOrg?.name,
+        createdAt: agent.createdAt.toISOString().split("T")[0],
+      };
+    })
+  );
+
+  // Fetch real invitations
+  const invitationsList = await db
+    .select({
+      id: invitations.id,
+      email: invitations.email,
+      role: invitations.role,
+      status: invitations.status,
+      createdAt: invitations.createdAt,
+    })
+    .from(invitations)
+    .orderBy(desc(invitations.createdAt))
+    .limit(20);
+
+  const formattedInvitations = invitationsList.map((inv) => ({
+    id: inv.id,
+    email: inv.email,
+    role: inv.role as "admin" | "head_agent" | "agent",
+    status: inv.status as "pending" | "accepted" | "expired",
+    createdAt: inv.createdAt.toISOString().split("T")[0],
+  }));
+
+  // Fetch real assignments
+  const assignments = await db
+    .select({
+      id: agentOrganizations.id,
+      agentId: agentOrganizations.agentId,
+      agentName: user.name,
+      agentEmail: user.email,
+      organizationId: agentOrganizations.organizationId,
+      organizationName: organizations.name,
+      organizationCode: organizations.code,
+      createdAt: agentOrganizations.createdAt,
+    })
+    .from(agentOrganizations)
+    .innerJoin(user, eq(user.id, agentOrganizations.agentId))
+    .innerJoin(
+      organizations,
+      eq(organizations.id, agentOrganizations.organizationId)
+    )
+    .orderBy(desc(agentOrganizations.createdAt));
+
+  const formattedAssignments = assignments.map((a) => ({
+    ...a,
+    createdAt: a.createdAt.toISOString().split("T")[0],
+  }));
+
+  // Build stats
+  const [totalClaimsResult] = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(claims);
+
+  const stats = {
+    totalOrganizations: orgs.length,
+    totalAgents: agentsWithOrgs.filter((a) => a.role !== "admin").length,
+    totalClaims: totalClaimsResult?.count ?? 0,
+    pendingInvitations: formattedInvitations.filter(
+      (i) => i.status === "pending"
+    ).length,
+  };
 
   const orgOptions = orgs.map((o) => ({
     id: o.id,
     name: o.name,
     code: o.code,
   }));
+
+  const agentOptions = agentsWithOrgs
+    .filter((a) => a.role !== "admin")
+    .map((a) => ({ id: a.id, name: a.name, email: a.email }));
+
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -193,12 +148,15 @@ export default async function AdminDashboard() {
         </div>
 
         {/* System Overview */}
-        <SystemOverview stats={mockStats} />
+        <SystemOverview stats={stats} />
 
         {/* Organizations + Agents */}
         <div className="mt-6 grid gap-6 lg:grid-cols-2">
           <ManageOrganizations organizations={orgs} />
-          <ManageAgents agents={mockAgents} invitations={mockInvitations} />
+          <ManageAgents
+            agents={agentsWithOrgs}
+            invitations={formattedInvitations}
+          />
         </div>
 
         {/* Agent ↔ Org Assignments */}
@@ -206,7 +164,7 @@ export default async function AdminDashboard() {
           <AgentOrgAssignments
             agents={agentOptions}
             organizations={orgOptions}
-            assignments={mockAssignments}
+            assignments={formattedAssignments}
           />
         </div>
       </div>

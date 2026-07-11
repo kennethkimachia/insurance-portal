@@ -10,3 +10,4 @@ export * from "./claim-notes";
 export * from "./claim-notifications";
 export * from "./motor-claim-details";
 export * from "./burglary-claim-details";
+export * from "./claim-progress-steps";

@@ -45,8 +45,10 @@ import {
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { submitMotorClaim } from "@/app/actions/user/submit-claim";
 
 // ── Step definitions ─────────────────────────────────────────────────────
 
@@ -154,13 +156,20 @@ const BLANK: MotorClaimFormData = {
 
 // ── Component ────────────────────────────────────────────────────────────
 
-export function MotorClaimForm() {
+interface MotorClaimFormProps {
+  policyId?: string;
+}
+
+export function MotorClaimForm({ policyId }: MotorClaimFormProps) {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<MotorClaimFormData>(BLANK);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [docUploads, setDocUploads] = useState<DocumentUploads>({});
   const [docErrors, setDocErrors] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
+  const [claimNumber, setClaimNumber] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const currentStep = STEPS[step];
 
@@ -251,7 +260,7 @@ export function MotorClaimForm() {
     }
   }
 
-  function handleNext() {
+  async function handleNext() {
     if (validateStep()) {
       if (step < STEPS.length - 1) {
         setStep(step + 1);
@@ -259,7 +268,29 @@ export function MotorClaimForm() {
         // Final submit
         const result = motorClaimSchema.safeParse(form);
         if (result.success) {
-          setSubmitted(true);
+          if (policyId) {
+            setIsSubmitting(true);
+            setSubmitError(null);
+            try {
+              const submitResult = await submitMotorClaim({
+                policyId,
+                description: form.damageSummary,
+                ...form,
+              });
+              if (submitResult.success && submitResult.claimNumber) {
+                setClaimNumber(submitResult.claimNumber);
+                setSubmitted(true);
+              } else {
+                setSubmitError(submitResult.error || "Submission failed");
+              }
+            } catch (err) {
+              setSubmitError("An unexpected error occurred");
+            } finally {
+              setIsSubmitting(false);
+            }
+          } else {
+            setSubmitted(true);
+          }
         }
       }
     }
@@ -288,8 +319,12 @@ export function MotorClaimForm() {
             Motor Claim Submitted
           </h2>
           <p className="max-w-md text-center text-sm text-muted-foreground">
-            Your claim has been submitted with {totalDocs} document
-            {totalDocs !== 1 ? "s" : ""}. An agent will review your vehicle
+            {claimNumber ? (
+              <>Your claim <span className="font-mono font-semibold text-foreground">{claimNumber}</span> has been submitted with {totalDocs} document{totalDocs !== 1 ? "s" : ""}.</>
+            ) : (
+              <>Your claim has been submitted with {totalDocs} document{totalDocs !== 1 ? "s" : ""}.</>
+            )}{" "}
+            An agent will review your vehicle
             details, verify the O.B. Number ({form.obNumber}) with the police,
             and begin the investigation process.
           </p>
@@ -652,23 +687,35 @@ export function MotorClaimForm() {
         )}
 
         {/* Navigation buttons */}
-        <div className="flex items-center justify-between border-t pt-4">
-          <Button
-            variant="outline"
-            onClick={handleBack}
-            disabled={step === 0}
-            className="gap-1.5"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Back
-          </Button>
-          <span className="text-xs text-muted-foreground">
-            Step {step + 1} of {STEPS.length}
-          </span>
-          <Button onClick={handleNext} className="gap-1.5">
-            {step === STEPS.length - 1 ? "Submit Claim" : "Next"}
-            {step < STEPS.length - 1 && <ChevronRight className="h-4 w-4" />}
-          </Button>
+        <div className="flex flex-col gap-3 border-t pt-4">
+          {submitError && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
+              <p className="text-xs font-medium text-destructive">{submitError}</p>
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <Button
+              variant="outline"
+              onClick={handleBack}
+              disabled={step === 0}
+              className="gap-1.5"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Back
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Step {step + 1} of {STEPS.length}
+            </span>
+            <Button onClick={handleNext} className="gap-1.5" disabled={isSubmitting}>
+              {isSubmitting ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Submitting...</>
+              ) : step === STEPS.length - 1 ? (
+                "Submit Claim"
+              ) : (
+                <>Next <ChevronRight className="h-4 w-4" /></>
+              )}
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>

@@ -16,8 +16,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AlertTriangle, Clock, User } from "lucide-react";
-import { useState } from "react";
+import { AlertTriangle, Clock, User, Loader2 } from "lucide-react";
+import { useState, useTransition } from "react";
+import { assignClaimToAgent } from "@/app/actions/head-agent/manage-claims";
 
 interface UnassignedClaim {
   id: string;
@@ -44,12 +45,20 @@ export function UnassignedClaims({ claims, agents }: UnassignedClaimsProps) {
   const [selectedAgents, setSelectedAgents] = useState<Record<string, string>>(
     {},
   );
+  const [isPending, startTransition] = useTransition();
+  const [assigningId, setAssigningId] = useState<string | null>(null);
 
   function handleAssign(claimId: string) {
     const agentId = selectedAgents[claimId];
     if (!agentId) return;
-    // Mock: remove the claim from the unassigned list
-    setItems((prev) => prev.filter((c) => c.id !== claimId));
+    setAssigningId(claimId);
+    startTransition(async () => {
+      const result = await assignClaimToAgent(claimId, agentId);
+      if (result.success) {
+        setItems((prev) => prev.filter((c) => c.id !== claimId));
+      }
+      setAssigningId(null);
+    });
   }
 
   return (
@@ -138,10 +147,14 @@ export function UnassignedClaims({ claims, agents }: UnassignedClaimsProps) {
                   </Select>
                   <Button
                     size="sm"
-                    disabled={!selectedAgents[claim.id]}
+                    disabled={!selectedAgents[claim.id] || (isPending && assigningId === claim.id)}
                     onClick={() => handleAssign(claim.id)}
                   >
-                    Assign
+                    {isPending && assigningId === claim.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      "Assign"
+                    )}
                   </Button>
                 </div>
               </div>

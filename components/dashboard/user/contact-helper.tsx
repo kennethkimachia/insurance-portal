@@ -7,14 +7,14 @@ import { Phone, MessageCircle, Mail, UserCircle } from "lucide-react";
 interface ContactHelperProps {
   agent: {
     name: string;
-    phone: string;
+    phone?: string | null;
     email: string;
   };
 }
 
 export function ContactHelper({ agent }: ContactHelperProps) {
-  const whatsappUrl = `https://wa.me/${agent.phone.replace(/[^0-9]/g, "")}`;
-  const telUrl = `tel:${agent.phone}`;
+  const whatsappUrl = agent.phone ? `https://wa.me/${agent.phone.replace(/[^0-9]/g, "")}` : null;
+  const telUrl = agent.phone ? `tel:${agent.phone}` : null;
   const mailUrl = `mailto:${agent.email}`;
 
   return (
@@ -31,28 +31,38 @@ export function ContactHelper({ agent }: ContactHelperProps) {
             <p className="text-sm font-semibold text-foreground">
               {agent.name}
             </p>
-            <p className="text-xs text-muted-foreground">{agent.phone}</p>
+            {agent.phone && (
+              <p className="text-xs text-muted-foreground">{agent.phone}</p>
+            )}
           </div>
         </div>
 
         <div className="grid grid-cols-3 gap-2">
-          <a href={telUrl}>
-            <Button variant="outline" size="sm" className="w-full gap-1.5">
-              <Phone className="h-3.5 w-3.5" />
-              Call
-            </Button>
-          </a>
-          <a href={whatsappUrl} target="_blank" rel="noopener noreferrer">
-            <Button
-              size="sm"
-              className="w-full gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700"
-            >
-              <MessageCircle className="h-3.5 w-3.5" />
-              WhatsApp
-            </Button>
-          </a>
-          <a href={mailUrl}>
-            <Button variant="outline" size="sm" className="w-full gap-1.5">
+          {telUrl ? (
+            <a href={telUrl}>
+              <Button variant="outline" size="sm" className="w-full gap-1.5 px-1">
+                <Phone className="h-3.5 w-3.5" />
+                Call
+              </Button>
+            </a>
+          ) : (
+            <div />
+          )}
+          {whatsappUrl ? (
+            <a href={whatsappUrl} target="_blank" rel="noopener noreferrer">
+              <Button
+                size="sm"
+                className="w-full gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700 px-1"
+              >
+                <MessageCircle className="h-3.5 w-3.5" />
+                WhatsApp
+              </Button>
+            </a>
+          ) : (
+            <div />
+          )}
+          <a href={mailUrl} className={telUrl ? "" : "col-span-3"}>
+            <Button variant="outline" size="sm" className="w-full gap-1.5 px-1">
               <Mail className="h-3.5 w-3.5" />
               Email
             </Button>

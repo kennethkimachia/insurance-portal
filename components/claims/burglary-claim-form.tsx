@@ -48,8 +48,10 @@ import {
   CheckCircle2,
   Plus,
   Trash2,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { submitBurglaryClaim } from "@/app/actions/user/submit-claim";
 
 // ── Step definitions ─────────────────────────────────────────────────────
 
@@ -150,7 +152,11 @@ const BLANK: BurglaryClaimFormData = {
 
 // ── Component ────────────────────────────────────────────────────────────
 
-export function BurglaryClaimForm() {
+interface BurglaryClaimFormProps {
+  policyId?: string;
+}
+
+export function BurglaryClaimForm({ policyId }: BurglaryClaimFormProps) {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<BurglaryClaimFormData>(BLANK);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -158,6 +164,9 @@ export function BurglaryClaimForm() {
   const [docUploads, setDocUploads] = useState<DocumentUploads>({});
   const [docErrors, setDocErrors] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
+  const [claimNumber, setClaimNumber] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const currentStep = STEPS[step];
 
@@ -283,14 +292,36 @@ export function BurglaryClaimForm() {
     return !hasError;
   }
 
-  function handleNext() {
+  async function handleNext() {
     if (validateStep()) {
       if (step < STEPS.length - 1) {
         setStep(step + 1);
       } else {
         const result = burglaryClaimSchema.safeParse(form);
         if (result.success) {
-          setSubmitted(true);
+          if (policyId) {
+            setIsSubmitting(true);
+            setSubmitError(null);
+            try {
+              const submitResult = await submitBurglaryClaim({
+                policyId,
+                description: form.description,
+                ...form,
+              });
+              if (submitResult.success && submitResult.claimNumber) {
+                setClaimNumber(submitResult.claimNumber);
+                setSubmitted(true);
+              } else {
+                setSubmitError(submitResult.error || "Submission failed");
+              }
+            } catch (err) {
+              setSubmitError("An unexpected error occurred");
+            } finally {
+              setIsSubmitting(false);
+            }
+          } else {
+            setSubmitted(true);
+          }
         }
       }
     }
@@ -329,11 +360,12 @@ export function BurglaryClaimForm() {
             Burglary Claim Submitted
           </h2>
           <p className="max-w-md text-center text-sm text-muted-foreground">
-            Your claim has been submitted with {form.lossItems.length} stolen
-            item{form.lossItems.length !== 1 ? "s" : ""} totalling KES{" "}
-            {totalLoss.toLocaleString()} and {totalDocs} supporting document
-            {totalDocs !== 1 ? "s" : ""}. An agent will verify the O.B. Number (
-            {form.obNumber}) and begin the investigation.
+            {claimNumber ? (
+              <>Your claim <span className="font-mono font-semibold text-foreground">{claimNumber}</span> has been submitted with {form.lossItems.length} stolen item{form.lossItems.length !== 1 ? "s" : ""} totalling KES {totalLoss.toLocaleString()} and {totalDocs} supporting document{totalDocs !== 1 ? "s" : ""}.</>
+            ) : (
+              <>Your claim has been submitted with {form.lossItems.length} stolen item{form.lossItems.length !== 1 ? "s" : ""} totalling KES {totalLoss.toLocaleString()} and {totalDocs} supporting document{totalDocs !== 1 ? "s" : ""}.</>
+            )}{" "}
+            An agent will verify the O.B. Number ({form.obNumber}) and begin the investigation.
           </p>
           <Button
             onClick={() => {
@@ -717,23 +749,35 @@ export function BurglaryClaimForm() {
         )}
 
         {/* Navigation buttons */}
-        <div className="flex items-center justify-between border-t pt-4">
-          <Button
-            variant="outline"
-            onClick={handleBack}
-            disabled={step === 0}
-            className="gap-1.5"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Back
-          </Button>
-          <span className="text-xs text-muted-foreground">
-            Step {step + 1} of {STEPS.length}
-          </span>
-          <Button onClick={handleNext} className="gap-1.5">
-            {step === STEPS.length - 1 ? "Submit Claim" : "Next"}
-            {step < STEPS.length - 1 && <ChevronRight className="h-4 w-4" />}
-          </Button>
+        <div className="flex flex-col gap-3 border-t pt-4">
+          {submitError && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
+              <p className="text-xs font-medium text-destructive">{submitError}</p>
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <Button
+              variant="outline"
+              onClick={handleBack}
+              disabled={step === 0}
+              className="gap-1.5"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Back
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Step {step + 1} of {STEPS.length}
+            </span>
+            <Button onClick={handleNext} className="gap-1.5" disabled={isSubmitting}>
+              {isSubmitting ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Submitting...</>
+              ) : step === STEPS.length - 1 ? (
+                "Submit Claim"
+              ) : (
+                <>Next <ChevronRight className="h-4 w-4" /></>
+              )}
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>

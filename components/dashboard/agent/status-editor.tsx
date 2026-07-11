@@ -15,8 +15,10 @@ import {
   ShieldCheck,
   Banknote,
   CheckCircle2,
+  Loader2,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { updateClaimStatus } from "@/app/actions/agent/manage-claims";
 
 type ClaimStatus =
   | "pending"
@@ -54,30 +56,45 @@ function getStepIndex(status: ClaimStatus): number {
 interface StatusEditorProps {
   claimNumber: string;
   currentStatus: ClaimStatus;
+  claimId?: string;
   onStatusChange?: (newStatus: ClaimStatus, notification: string) => void;
 }
 
 export function StatusEditor({
   claimNumber,
   currentStatus,
+  claimId,
   onStatusChange,
 }: StatusEditorProps) {
   const [status, setStatus] = useState(currentStatus);
   const [notification, setNotification] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
   const currentIndex = getStepIndex(status);
   const isRejected = status === "rejected";
 
   function handleChange(newStatus: string) {
     const s = newStatus as ClaimStatus;
-    setStatus(s);
 
-    const step = STEPS.find((st) => st.key === s);
-    const msg = `Claim ${claimNumber} has been updated to "${step?.label || s}"`;
-    setNotification(msg);
-    onStatusChange?.(s, msg);
-
-    // Auto-dismiss notification
-    setTimeout(() => setNotification(null), 4000);
+    if (claimId) {
+      startTransition(async () => {
+        const result = await updateClaimStatus(claimId, s);
+        if (result.success) {
+          setStatus(s);
+          const step = STEPS.find((st) => st.key === s);
+          const msg = `Claim ${claimNumber} has been updated to "${step?.label || s}"`;
+          setNotification(msg);
+          onStatusChange?.(s, msg);
+          setTimeout(() => setNotification(null), 4000);
+        }
+      });
+    } else {
+      setStatus(s);
+      const step = STEPS.find((st) => st.key === s);
+      const msg = `Claim ${claimNumber} has been updated to "${step?.label || s}"`;
+      setNotification(msg);
+      onStatusChange?.(s, msg);
+      setTimeout(() => setNotification(null), 4000);
+    }
   }
 
   return (
