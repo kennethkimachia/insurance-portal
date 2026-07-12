@@ -13,14 +13,16 @@ interface DashboardLayoutClientProps {
     role: UserRole;
   };
   organizations: { id: string; name: string; code: string }[];
+  initialOrganizationId?: string;
 }
 
 export function DashboardLayoutClient({
   children,
   user,
   organizations,
+  initialOrganizationId,
 }: DashboardLayoutClientProps) {
-  const initialOrgId = organizations[0]?.id ?? "";
+  const initialOrgId = initialOrganizationId ?? organizations[0]?.id ?? "";
 
   return (
     <OrgProvider organizations={organizations} initialOrgId={initialOrgId}>

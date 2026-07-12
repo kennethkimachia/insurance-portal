@@ -52,6 +52,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { submitBurglaryClaim } from "@/app/actions/user/submit-claim";
+import { uploadClaimDocuments } from "@/lib/upload-claim-documents";
 
 // ── Step definitions ─────────────────────────────────────────────────────
 
@@ -102,7 +103,7 @@ const BURGLARY_DOC_CATEGORIES: DocumentCategory[] = [
     description:
       "Photographs of the broken window, tampered lock, or forced entry point",
     required: true,
-    accept: "image/*",
+    accept: "image/*,video/*",
     multiple: true,
   },
   {
@@ -305,10 +306,16 @@ export function BurglaryClaimForm({ policyId }: BurglaryClaimFormProps) {
             try {
               const submitResult = await submitBurglaryClaim({
                 policyId,
-                description: form.description,
+                description: form.entryMethod,
                 ...form,
               });
-              if (submitResult.success && submitResult.claimNumber) {
+              if (
+                submitResult.success &&
+                submitResult.claimNumber &&
+                submitResult.claimId &&
+                submitResult.organizationId
+              ) {
+                await uploadClaimDocuments(submitResult.claimId, submitResult.organizationId, docUploads);
                 setClaimNumber(submitResult.claimNumber);
                 setSubmitted(true);
               } else {

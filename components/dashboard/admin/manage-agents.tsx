@@ -40,9 +40,16 @@ interface PendingInvite {
   createdAt: string;
 }
 
+interface OrganizationOption {
+  id: string;
+  name: string;
+  code: string;
+}
+
 interface ManageAgentsProps {
   agents: AgentUser[];
   invitations: PendingInvite[];
+  organizations: OrganizationOption[];
 }
 
 const roleLabels: Record<UserRole, string> = {
@@ -61,23 +68,26 @@ const roleBadgeColors: Record<UserRole, string> = {
 export function ManageAgents({
   agents: initialAgents,
   invitations: initialInvites,
+  organizations,
 }: ManageAgentsProps) {
   const [agents] = useState(initialAgents);
   const [invites, setInvites] = useState(initialInvites);
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<UserRole | "">("");
+  const [inviteOrganizationId, setInviteOrganizationId] = useState("");
   const [tab, setTab] = useState<"agents" | "invitations">("agents");
   const [isPending, startTransition] = useTransition();
 
   function handleInvite(e: React.FormEvent) {
     e.preventDefault();
-    if (!inviteEmail.trim() || !inviteRole) return;
+    if (!inviteEmail.trim() || !inviteRole || !inviteOrganizationId) return;
 
     startTransition(async () => {
       const response = await inviteAgent({
         email: inviteEmail.trim(),
         role: inviteRole,
+        organizationId: inviteOrganizationId,
       });
 
       if (response.success) {
@@ -92,6 +102,7 @@ export function ManageAgents({
         setInviteEmail("");
         setInviteRole("");
         setShowInvite(false);
+        setInviteOrganizationId("");
         toast.success(`Invitation sent to ${inviteEmail.trim()}`);
       } else {
         toast.error(response.error || "Failed to send invitation");
@@ -136,7 +147,7 @@ export function ManageAgents({
             onSubmit={handleInvite}
             className="mb-4 space-y-3 rounded-lg border border-dashed p-4"
           >
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 lg:grid-cols-3">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-foreground">
                   Email Address
@@ -169,6 +180,23 @@ export function ManageAgents({
               </div>
             </div>
             <div className="flex justify-end gap-2">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">
+                  Organization
+                </label>
+                <Select value={inviteOrganizationId} onValueChange={setInviteOrganizationId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select organization..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {organizations.map((organization) => (
+                      <SelectItem key={organization.id} value={organization.id}>
+                        {organization.name} ({organization.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <Button
                 type="button"
                 variant="outline"
@@ -180,7 +208,7 @@ export function ManageAgents({
               <Button
                 type="submit"
                 size="sm"
-                disabled={!inviteEmail.trim() || !inviteRole || isPending}
+                disabled={!inviteEmail.trim() || !inviteRole || !inviteOrganizationId || isPending}
               >
                 {isPending ? "Sending..." : "Send Invitation"}
               </Button>

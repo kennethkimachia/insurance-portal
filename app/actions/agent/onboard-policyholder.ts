@@ -78,7 +78,7 @@ export async function onboardPolicyholder(formData: FormData) {
   }
 
   // Find or create user by email
-  let [existingUser] = await db
+  const [existingUser] = await db
     .select({ id: user.id })
     .from(user)
     .where(eq(user.email, email))

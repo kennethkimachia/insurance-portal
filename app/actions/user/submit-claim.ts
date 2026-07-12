@@ -18,6 +18,40 @@ import { requirePermission, permissions } from "@/lib/permissions";
 import { eq, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { buildClaimFileKey, getUploadUrl } from "@/lib/storage";
+import { requireOrganizationAccess } from "@/lib/organization-access";
+import type { SessionUser } from "@/lib/session";
+
+const ALLOWED_ATTACHMENT_TYPES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+]);
+
+async function requireClaimAttachmentAccess(session: SessionUser, claimId: string) {
+  const [claim] = await db
+    .select({
+      organizationId: claims.organizationId,
+      policyholderId: policies.userId,
+    })
+    .from(claims)
+    .innerJoin(policies, eq(policies.id, claims.policyId))
+    .where(eq(claims.id, claimId))
+    .limit(1);
+
+  if (!claim) throw new Error("Claim not found");
+  if (session.role === "user" && claim.policyholderId !== session.id) {
+    throw new Error("This claim does not belong to you");
+  }
+  if (session.role !== "user") {
+    await requireOrganizationAccess(session, claim.organizationId);
+  }
+  return claim;
+}
+
 
 // ── Default progress steps (seeded on claim creation) ──────────────────
 
@@ -167,6 +201,7 @@ export async function submitMotorClaim(data: z.infer<typeof motorClaimFormSchema
     success: true,
     claimNumber: claim.claimNumber,
     claimId: claim.id,
+    organizationId: policy.organizationId,
   };
 }
 
@@ -299,6 +334,7 @@ export async function submitBurglaryClaim(data: z.infer<typeof burglaryClaimForm
     success: true,
     claimNumber: claim.claimNumber,
     claimId: claim.id,
+    organizationId: policy.organizationId,
   };
 }
 
@@ -311,6 +347,17 @@ export async function getClaimUploadUrl(
   contentType: string
 ) {
   const session = await requireSession();
+  if (!ALLOWED_ATTACHMENT_TYPES.has(contentType)) {
+    throw new Error("Unsupported attachment type");
+  }
+  const claim = await requireClaimAttachmentAccess(session, claimId);
+  if (claim.organizationId !== orgId) {
+    throw new Error("Organization does not match this claim");
+  }
+  if (!filename.trim() || filename.length > 255) {
+    throw new Error("Invalid filename");
+  }
+
 
   const key = buildClaimFileKey(orgId, claimId, filename);
   const url = await getUploadUrl(key, contentType);
@@ -326,6 +373,17 @@ export async function recordClaimAttachment(data: {
   sizeBytes: number;
 }) {
   const session = await requireSession();
+  const claim = await requireClaimAttachmentAccess(session, data.claimId);
+  if (!ALLOWED_ATTACHMENT_TYPES.has(data.contentType)) {
+    throw new Error("Unsupported attachment type");
+  }
+  if (data.sizeBytes <= 0 || data.sizeBytes > 50 * 1024 * 1024) {
+    throw new Error("Attachments must be no larger than 50 MB");
+  }
+  const expectedPrefix = `${claim.organizationId}/claims/${data.claimId}/`;
+  if (!data.storageKey.startsWith(expectedPrefix)) {
+    throw new Error("Invalid attachment storage path");
+  }
 
   await db.insert(claimAttachments).values({
     claimId: data.claimId,

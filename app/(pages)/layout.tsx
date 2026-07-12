@@ -5,6 +5,7 @@ import { eq, desc } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { ROUTES } from "@/lib/routes";
 import { DashboardLayoutClient } from "./layout-client";
+import { getActiveOrganizationId } from "@/lib/organization-access";
 
 export default async function DashboardLayout({
   children,
@@ -63,6 +64,7 @@ export default async function DashboardLayout({
     if (userOrg) orgs = [userOrg];
   }
 
+  const activeOrganizationId = await getActiveOrganizationId(sessionUser);
   return (
     <DashboardLayoutClient
       user={{
@@ -71,6 +73,7 @@ export default async function DashboardLayout({
         role: sessionUser.role,
       }}
       organizations={orgs}
+      initialOrganizationId={activeOrganizationId ?? undefined}
     >
       {children}
     </DashboardLayoutClient>

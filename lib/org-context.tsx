@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, ReactNode, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 interface Organization {
   id: string;
@@ -25,6 +26,8 @@ export function OrgProvider({
   organizations: Organization[];
   initialOrgId: string;
 }) {
+  const router = useRouter();
+  const [, startTransition] = useTransition();
   const [currentOrgId, setCurrentOrgIdState] = useState(initialOrgId);
 
   const currentOrg =
@@ -34,8 +37,8 @@ export function OrgProvider({
 
   function setCurrentOrgId(id: string) {
     setCurrentOrgIdState(id);
-    // Set a cookie so server components can optionally read the active org if needed
     document.cookie = `active_organization_id=${id}; path=/; max-age=31536000; SameSite=Lax`;
+    startTransition(() => router.refresh());
   }
 
   return (

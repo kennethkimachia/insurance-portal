@@ -1,6 +1,8 @@
 "use client";
 
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -68,12 +70,20 @@ export function StatusEditor({
 }: StatusEditorProps) {
   const [status, setStatus] = useState(currentStatus);
   const [notification, setNotification] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const currentIndex = getStepIndex(status);
   const isRejected = status === "rejected";
 
   function handleChange(newStatus: string) {
     const s = newStatus as ClaimStatus;
+
+    if (s === "rejected") {
+      setStatus(s);
+      setError(null);
+      return;
+    }
 
     if (claimId) {
       startTransition(async () => {
@@ -95,6 +105,22 @@ export function StatusEditor({
       onStatusChange?.(s, msg);
       setTimeout(() => setNotification(null), 4000);
     }
+  }
+
+  function submitRejection() {
+    if (!claimId) return;
+    startTransition(async () => {
+      const result = await updateClaimStatus(claimId, "rejected", rejectionReason);
+      if (!result.success) {
+        setError(result.error ?? "Unable to reject this claim");
+        return;
+      }
+      setError(null);
+      const msg = `Claim ${claimNumber} was rejected with a reason supplied to the policyholder.`;
+      setNotification(msg);
+      onStatusChange?.("rejected", msg);
+      setTimeout(() => setNotification(null), 4000);
+    });
   }
 
   return (
@@ -188,10 +214,28 @@ export function StatusEditor({
           )}
 
           {isRejected && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-center">
-              <p className="text-sm font-medium text-destructive">
-                Claim Rejected
-              </p>
+            <div className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+              <div>
+                <p className="text-sm font-medium text-destructive">Rejection reason</p>
+                <p className="text-xs text-muted-foreground">
+                  This explanation will be shown to the policyholder.
+                </p>
+              </div>
+              <Textarea
+                value={rejectionReason}
+                onChange={(event) => setRejectionReason(event.target.value)}
+                placeholder="Explain why this claim cannot be accepted..."
+                rows={4}
+              />
+              {error && <p className="text-xs text-destructive">{error}</p>}
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={isPending || rejectionReason.trim().length < 10}
+                onClick={submitRejection}
+              >
+                {isPending ? "Saving..." : "Confirm rejection"}
+              </Button>
             </div>
           )}
 

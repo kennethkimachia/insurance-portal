@@ -16,18 +16,21 @@ import Image from "next/image";
 import { Loader2, X } from "lucide-react";
 import { signUp } from "@/lib/auth-client";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { acceptInvitation } from "@/app/actions/admin/manage-agents";
 
 export default function SignUp() {
+  const searchParams = useSearchParams();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const invitationToken = searchParams.get("token");
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -166,7 +169,14 @@ export default function SignUp() {
                   onError: (ctx) => {
                     toast.error(ctx.error.message);
                   },
-                  onSuccess: () => {
+                  onSuccess: async () => {
+                    if (invitationToken) {
+                      const result = await acceptInvitation(invitationToken);
+                      if (!result.success) {
+                        toast.error(result.error ?? "Invitation could not be accepted");
+                        return;
+                      }
+                    }
                     router.push("/dashboard");
                   },
                 },

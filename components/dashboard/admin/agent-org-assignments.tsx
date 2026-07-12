@@ -16,7 +16,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Link2, CheckCircle2, User, Building2 } from "lucide-react";
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import {
+  assignAgentToOrganization,
+  removeAgentFromOrganization,
+} from "@/app/actions/admin/manage-agents";
+import { toast } from "sonner";
 
 interface Agent {
   id: string;
@@ -56,6 +61,7 @@ export function AgentOrgAssignments({
   const [selectedAgent, setSelectedAgent] = useState("");
   const [selectedOrg, setSelectedOrg] = useState("");
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   function handleAssign() {
     if (!selectedAgent || !selectedOrg) return;
@@ -68,9 +74,15 @@ export function AgentOrgAssignments({
 
     const agent = agents.find((a) => a.id === selectedAgent)!;
     const org = organizations.find((o) => o.id === selectedOrg)!;
+    startTransition(async () => {
+      const result = await assignAgentToOrganization(agent.id, org.id);
+      if (!result.success || !result.assignmentId) {
+        toast.error(result.error ?? "Could not create assignment");
+        return;
+      }
 
     const newAssignment: Assignment = {
-      id: `asgn-${Date.now()}`,
+      id: result.assignmentId,
       agentId: agent.id,
       agentName: agent.name,
       agentEmail: agent.email,
@@ -85,10 +97,18 @@ export function AgentOrgAssignments({
     setSelectedAgent("");
     setSelectedOrg("");
     setTimeout(() => setSuccessMsg(null), 3000);
+    });
   }
 
   function handleRemove(assignmentId: string) {
-    setAssignments((prev) => prev.filter((a) => a.id !== assignmentId));
+    startTransition(async () => {
+      const result = await removeAgentFromOrganization(assignmentId);
+      if (!result.success) {
+        toast.error(result.error ?? "Could not remove assignment");
+        return;
+      }
+      setAssignments((prev) => prev.filter((a) => a.id !== assignmentId));
+    });
   }
 
   return (
@@ -151,7 +171,7 @@ export function AgentOrgAssignments({
 
             <Button
               size="sm"
-              disabled={!selectedAgent || !selectedOrg}
+              disabled={!selectedAgent || !selectedOrg || isPending}
               onClick={handleAssign}
               className="self-start"
             >
@@ -220,6 +240,7 @@ export function AgentOrgAssignments({
                   size="sm"
                   className="text-destructive hover:bg-destructive/10"
                   onClick={() => handleRemove(a.id)}
+                  disabled={isPending}
                 >
                   Remove
                 </Button>

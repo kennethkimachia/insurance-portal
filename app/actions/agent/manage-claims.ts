@@ -16,12 +16,16 @@ import { requireSession } from "@/lib/session";
 import { requirePermission, permissions } from "@/lib/permissions";
 import { eq, and, desc, asc, or, sql } from "drizzle-orm";
 
+import { getActiveOrganizationId, requireOrganizationAccess } from "@/lib/organization-access";
 // ── Get my assigned claims ─────────────────────────────────────────────
 
 export async function getMyAssignedClaims() {
   const session = await requireSession();
   requirePermission(session.role, permissions.CLAIM_UPDATE_STATUS);
 
+  const organizationId = await getActiveOrganizationId(session);
+  if (!organizationId) return [];
+  await requireOrganizationAccess(session, organizationId);
   const result = await db
     .select({
       id: claims.id,
@@ -37,7 +41,7 @@ export async function getMyAssignedClaims() {
     .innerJoin(policies, eq(policies.id, claims.policyId))
     .innerJoin(user, eq(user.id, policies.userId))
     .innerJoin(organizations, eq(organizations.id, claims.organizationId))
-    .where(eq(claims.assignedAgentId, session.id))
+    .where(and(eq(claims.assignedAgentId, session.id), eq(claims.organizationId, organizationId)))
     .orderBy(desc(claims.createdAt));
 
   return result.map((c) => ({
@@ -76,6 +80,7 @@ export async function getClaimDetails(claimId: string) {
 
   if (!claim) return null;
 
+  await requireOrganizationAccess(session, claim.organizationId);
   // Auth check — only the assigned agent, head_agent, or admin can view
   if (session.role === "agent" && claim.assignedAgentId !== session.id) {
     return null;
@@ -110,7 +115,11 @@ const STATUS_LABELS: Record<ClaimStatus, string> = {
   rejected: "Rejected",
 };
 
-export async function updateClaimStatus(claimId: string, newStatus: ClaimStatus) {
+export async function updateClaimStatus(
+  claimId: string,
+  newStatus: ClaimStatus,
+  rejectionReason?: string,
+) {
   const session = await requireSession();
   requirePermission(session.role, permissions.CLAIM_UPDATE_STATUS);
 
@@ -120,6 +129,7 @@ export async function updateClaimStatus(claimId: string, newStatus: ClaimStatus)
       claimNumber: claims.claimNumber,
       assignedAgentId: claims.assignedAgentId,
       policyId: claims.policyId,
+      organizationId: claims.organizationId,
     })
     .from(claims)
     .where(eq(claims.id, claimId))
@@ -128,10 +138,18 @@ export async function updateClaimStatus(claimId: string, newStatus: ClaimStatus)
   if (!claim) return { success: false, error: "Claim not found" };
 
   // Only the assigned agent (or head_agent/admin) can update
+  await requireOrganizationAccess(session, claim.organizationId);
   if (session.role === "agent" && claim.assignedAgentId !== session.id) {
     return { success: false, error: "This claim is not assigned to you" };
   }
 
+  const reason = rejectionReason?.trim();
+  if (newStatus === "rejected" && (!reason || reason.length < 10)) {
+    return {
+      success: false,
+      error: "A clear rejection reason of at least 10 characters is required",
+    };
+  }
   await db
     .update(claims)
     .set({ status: newStatus })
@@ -149,7 +167,9 @@ export async function updateClaimStatus(claimId: string, newStatus: ClaimStatus)
       claimId: claim.id,
       userId: policy.userId,
       type: "status_change",
-      message: `Your claim ${claim.claimNumber} has been updated to "${STATUS_LABELS[newStatus]}".`,
+      message: newStatus === "rejected"
+        ? `Your claim ${claim.claimNumber} was rejected. Reason: ${reason}`
+        : `Your claim ${claim.claimNumber} has been updated to "${STATUS_LABELS[newStatus]}".`,
     });
   }
 
@@ -157,7 +177,9 @@ export async function updateClaimStatus(claimId: string, newStatus: ClaimStatus)
   await db.insert(claimNotes).values({
     claimId: claim.id,
     authorId: session.id,
-    content: `Status updated to "${STATUS_LABELS[newStatus]}".`,
+    content: newStatus === "rejected"
+      ? `Claim rejected. Reason: ${reason}`
+      : `Status updated to "${STATUS_LABELS[newStatus]}".`,
   });
 
   return { success: true };
@@ -179,13 +201,14 @@ export async function addClaimNote(claimId: string, content: string) {
       claimNumber: claims.claimNumber,
       assignedAgentId: claims.assignedAgentId,
       policyId: claims.policyId,
+      organizationId: claims.organizationId,
     })
     .from(claims)
     .where(eq(claims.id, claimId))
     .limit(1);
 
   if (!claim) return { success: false, error: "Claim not found" };
-
+  await requireOrganizationAccess(session, claim.organizationId);
   if (session.role === "agent" && claim.assignedAgentId !== session.id) {
     return { success: false, error: "This claim is not assigned to you" };
   }
@@ -218,8 +241,8 @@ export async function addClaimNote(claimId: string, content: string) {
 // ── Get claim timeline ─────────────────────────────────────────────────
 
 export async function getClaimTimeline(claimId: string) {
-  const session = await requireSession();
 
+  if (!(await getClaimDetails(claimId))) return [];
   const notes = await db
     .select({
       id: claimNotes.id,

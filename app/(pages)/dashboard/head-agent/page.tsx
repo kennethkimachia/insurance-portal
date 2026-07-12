@@ -6,9 +6,7 @@ import {
 import { getSessionUser } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { ROUTES } from "@/lib/routes";
-import { db } from "@/db";
-import { agentOrganizations, organizations } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { getActiveOrganizationId } from "@/lib/organization-access";
 import { HeadAgentDashboardClient } from "./head-agent-dashboard-client";
 
 export default async function HeadAgentDashboard() {
@@ -20,23 +18,7 @@ export default async function HeadAgentDashboard() {
     redirect(ROUTES.SIGNIN);
   }
 
-  // Get the head agent's first organization
-  let orgId: string | null = null;
-
-  if (session.role === "admin") {
-    const [org] = await db
-      .select({ id: organizations.id })
-      .from(organizations)
-      .limit(1);
-    orgId = org?.id ?? null;
-  } else {
-    const [agentOrg] = await db
-      .select({ organizationId: agentOrganizations.organizationId })
-      .from(agentOrganizations)
-      .where(eq(agentOrganizations.agentId, session.id))
-      .limit(1);
-    orgId = agentOrg?.organizationId ?? null;
-  }
+  const orgId = await getActiveOrganizationId(session);
 
   if (!orgId) {
     return (

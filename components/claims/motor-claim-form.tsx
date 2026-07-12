@@ -49,6 +49,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { submitMotorClaim } from "@/app/actions/user/submit-claim";
+import { uploadClaimDocuments } from "@/lib/upload-claim-documents";
 
 // ── Step definitions ─────────────────────────────────────────────────────
 
@@ -106,7 +107,7 @@ const MOTOR_DOC_CATEGORIES: DocumentCategory[] = [
     label: "Accident Scene Photos",
     description: "Photographs of the accident scene from multiple angles",
     required: true,
-    accept: "image/*",
+    accept: "image/*,video/*",
     multiple: true,
   },
   {
@@ -115,7 +116,7 @@ const MOTOR_DOC_CATEGORIES: DocumentCategory[] = [
     description:
       "High-resolution images of the vehicle damage with number plates visible",
     required: true,
-    accept: "image/*",
+    accept: "image/*,video/*",
     multiple: true,
   },
   {
@@ -276,8 +277,16 @@ export function MotorClaimForm({ policyId }: MotorClaimFormProps) {
                 policyId,
                 description: form.damageSummary,
                 ...form,
+                thirdPartyRegistration: form.thirdPartyRegistration ?? undefined,
+                thirdPartyInjuries: form.thirdPartyInjuries ?? undefined,
               });
-              if (submitResult.success && submitResult.claimNumber) {
+              if (
+                submitResult.success &&
+                submitResult.claimNumber &&
+                submitResult.claimId &&
+                submitResult.organizationId
+              ) {
+                await uploadClaimDocuments(submitResult.claimId, submitResult.organizationId, docUploads);
                 setClaimNumber(submitResult.claimNumber);
                 setSubmitted(true);
               } else {

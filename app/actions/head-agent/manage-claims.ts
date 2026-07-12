@@ -12,6 +12,7 @@ import {
 import { requireSession } from "@/lib/session";
 import { requirePermission, permissions } from "@/lib/permissions";
 import { eq, and, isNull, sql, desc } from "drizzle-orm";
+import { requireOrganizationAccess } from "@/lib/organization-access";
 
 // ── Get unassigned claims for the head agent's organization ────────────
 
@@ -19,6 +20,7 @@ export async function getUnassignedClaims(organizationId: string) {
   const session = await requireSession();
   requirePermission(session.role, permissions.CLAIM_READ_ALL);
 
+  await requireOrganizationAccess(session, organizationId);
   const result = await db
     .select({
       id: claims.id,
@@ -54,6 +56,7 @@ export async function getAgentWorkloads(organizationId: string) {
   const session = await requireSession();
   requirePermission(session.role, permissions.CLAIM_READ_ALL);
 
+  await requireOrganizationAccess(session, organizationId);
   // Get all agents in this org
   const agents = await db
     .select({
@@ -111,6 +114,7 @@ export async function assignClaimToAgent(claimId: string, agentId: string) {
   requirePermission(session.role, permissions.CLAIM_ASSIGN);
 
   // Verify claim exists and is unassigned
+  // The head agent and target agent must both belong to the claim organization.
   const [claim] = await db
     .select({
       id: claims.id,
@@ -124,6 +128,7 @@ export async function assignClaimToAgent(claimId: string, agentId: string) {
 
   if (!claim) {
     return { success: false, error: "Claim not found" };
+  await requireOrganizationAccess(session, claim.organizationId);
   }
 
   // Verify agent belongs to the same org
@@ -186,6 +191,7 @@ export async function reassignClaim(claimId: string, newAgentId: string) {
   requirePermission(session.role, permissions.CLAIM_ASSIGN);
 
   const [claim] = await db
+  // Reassignment is restricted to the same organization as the claim.
     .select({
       id: claims.id,
       claimNumber: claims.claimNumber,
@@ -197,6 +203,7 @@ export async function reassignClaim(claimId: string, newAgentId: string) {
     .limit(1);
 
   if (!claim) return { success: false, error: "Claim not found" };
+  await requireOrganizationAccess(session, claim.organizationId);
 
   // Verify new agent is in the org
   const agentOrg = await db
@@ -251,6 +258,7 @@ export async function getBottleneckMetrics(organizationId: string) {
   const session = await requireSession();
   requirePermission(session.role, permissions.CLAIM_READ_ALL);
 
+  await requireOrganizationAccess(session, organizationId);
   const statuses = [
     "pending",
     "assigned",

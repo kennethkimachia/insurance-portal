@@ -156,6 +156,7 @@ export default async function AdminDashboard() {
           <ManageAgents
             agents={agentsWithOrgs}
             invitations={formattedInvitations}
+            organizations={orgOptions}
           />
         </div>
 
