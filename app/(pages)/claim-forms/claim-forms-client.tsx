@@ -43,10 +43,10 @@ export default function ClaimsPageClient({ policies }: ClaimsPageClientProps) {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+    <div className="min-h-[calc(100svh-3.5rem)] bg-muted/30">
+      <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             File a New Claim
           </h1>
           <p className="mt-1 text-muted-foreground">
@@ -59,7 +59,7 @@ export default function ClaimsPageClient({ policies }: ClaimsPageClientProps) {
           <div className="grid gap-4 sm:grid-cols-2">
             <button
               onClick={() => handleSelectType("motor")}
-              className="group flex flex-col items-center gap-3 rounded-xl border-2 border-dashed p-8 text-center transition-all hover:border-primary hover:bg-primary/5"
+              className="group flex min-h-52 flex-col items-center justify-center gap-4 rounded-xl border bg-card p-6 text-center shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-8"
             >
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted transition-colors group-hover:bg-primary/10">
                 <Car className="h-7 w-7 text-muted-foreground transition-colors group-hover:text-primary" />
@@ -76,7 +76,7 @@ export default function ClaimsPageClient({ policies }: ClaimsPageClientProps) {
 
             <button
               onClick={() => handleSelectType("burglary")}
-              className="group flex flex-col items-center gap-3 rounded-xl border-2 border-dashed p-8 text-center transition-all hover:border-primary hover:bg-primary/5"
+              className="group flex min-h-52 flex-col items-center justify-center gap-4 rounded-xl border bg-card p-6 text-center shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-8"
             >
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted transition-colors group-hover:bg-primary/10">
                 <Building2 className="h-7 w-7 text-muted-foreground transition-colors group-hover:text-primary" />
@@ -97,7 +97,7 @@ export default function ClaimsPageClient({ policies }: ClaimsPageClientProps) {
             <div className="flex items-center gap-3">
               <button
                 onClick={handleBack}
-                className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                className="inline-flex min-h-9 items-center rounded-lg px-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 ← Change policy type
               </button>
@@ -125,7 +125,7 @@ export default function ClaimsPageClient({ policies }: ClaimsPageClientProps) {
                 </p>
               </div>
             ) : filteredPolicies.length > 1 && !selectedPolicyId ? (
-              <div className="rounded-xl border bg-card p-6">
+              <div className="rounded-xl border bg-card p-5 shadow-sm sm:p-6">
                 <h3 className="text-sm font-semibold text-foreground">
                   Select Policy Number
                 </h3>
@@ -137,7 +137,7 @@ export default function ClaimsPageClient({ policies }: ClaimsPageClientProps) {
                     <button
                       key={p.id}
                       onClick={() => setSelectedPolicyId(p.id)}
-                      className="flex items-center justify-between rounded-lg border p-4 text-left hover:border-primary hover:bg-primary/5 transition-all"
+                      className="flex flex-col gap-3 rounded-lg border bg-background p-4 text-left transition-all hover:border-primary/50 hover:bg-primary/5 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div>
                         <p className="font-mono text-sm font-bold text-foreground">

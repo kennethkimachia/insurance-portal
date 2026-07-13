@@ -56,9 +56,9 @@ const ROLE_PERMISSIONS: Record<Permission, Role[]> = {
   [permissions.CLAIM_READ_OWN]: ["user"],
   [permissions.CLAIM_READ_ASSIGNED]: ["agent"],
   [permissions.CLAIM_READ_ALL]: ["admin", "head_agent"],
-  [permissions.CLAIM_CREATE]: ["user", "agent", "head_agent"],
+  [permissions.CLAIM_CREATE]: ["user", "agent", "head_agent", "admin"],
   [permissions.CLAIM_ASSIGN]: ["head_agent", "admin"],
-  [permissions.CLAIM_UPDATE_STATUS]: ["agent", "head_agent"],
+  [permissions.CLAIM_UPDATE_STATUS]: ["agent", "head_agent", "admin"],
   [permissions.CLAIM_DELETE]: ["admin"],
 
   // Policies

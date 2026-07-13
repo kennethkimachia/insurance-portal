@@ -37,7 +37,7 @@ export function ContactHelper({ agent }: ContactHelperProps) {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
           {telUrl ? (
             <a href={telUrl}>
               <Button variant="outline" size="sm" className="w-full gap-1.5 px-1">

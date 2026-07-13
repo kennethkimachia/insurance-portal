@@ -363,7 +363,7 @@ export function MotorClaimForm({ policyId }: MotorClaimFormProps) {
 
       <CardContent className="space-y-6">
         {/* Step indicator */}
-        <div className="flex gap-1">
+        <div className="flex gap-1 overflow-x-auto pb-1 [scrollbar-width:none]">
           {STEPS.map((s, i) => {
             const Icon = s.icon;
             return (
@@ -377,7 +377,7 @@ export function MotorClaimForm({ policyId }: MotorClaimFormProps) {
                   }
                 }}
                 className={cn(
-                  "flex flex-1 flex-col items-center gap-1 rounded-lg border p-2 text-xs font-medium transition-colors",
+                  "flex min-w-14 flex-1 flex-col items-center gap-1 rounded-lg border bg-background p-2 text-xs font-medium transition-colors",
                   i === step
                     ? "border-primary bg-primary/5 text-primary"
                     : i < step
@@ -702,7 +702,7 @@ export function MotorClaimForm({ policyId }: MotorClaimFormProps) {
               <p className="text-xs font-medium text-destructive">{submitError}</p>
             </div>
           )}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <Button
               variant="outline"
               onClick={handleBack}

@@ -124,7 +124,7 @@ export function AgentWorkload({ agents }: AgentWorkloadProps) {
             return (
               <div
                 key={agent.id}
-                className={`rounded-lg border p-3 transition-all hover:shadow-sm ${config.bg}`}
+                className={`rounded-lg border bg-background/70 p-3 transition-all hover:shadow-sm ${config.bg}`}
               >
                 <div className="flex items-center gap-2">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-background">

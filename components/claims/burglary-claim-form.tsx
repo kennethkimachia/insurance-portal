@@ -400,7 +400,7 @@ export function BurglaryClaimForm({ policyId }: BurglaryClaimFormProps) {
 
       <CardContent className="space-y-6">
         {/* Step indicator */}
-        <div className="flex gap-1">
+        <div className="flex gap-1 overflow-x-auto pb-1 [scrollbar-width:none]">
           {STEPS.map((s, i) => {
             const Icon = s.icon;
             return (
@@ -415,7 +415,7 @@ export function BurglaryClaimForm({ policyId }: BurglaryClaimFormProps) {
                   }
                 }}
                 className={cn(
-                  "flex flex-1 flex-col items-center gap-1 rounded-lg border p-2 text-xs font-medium transition-colors",
+                  "flex min-w-14 flex-1 flex-col items-center gap-1 rounded-lg border bg-background p-2 text-xs font-medium transition-colors",
                   i === step
                     ? "border-primary bg-primary/5 text-primary"
                     : i < step
@@ -641,7 +641,7 @@ export function BurglaryClaimForm({ policyId }: BurglaryClaimFormProps) {
             <div className="space-y-4">
               {form.lossItems.map((item, idx) => (
                 <div key={idx} className="rounded-lg border p-4 space-y-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-sm font-semibold text-foreground">
                       Item {idx + 1}
                     </span>
@@ -762,7 +762,7 @@ export function BurglaryClaimForm({ policyId }: BurglaryClaimFormProps) {
               <p className="text-xs font-medium text-destructive">{submitError}</p>
             </div>
           )}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <Button
               variant="outline"
               onClick={handleBack}

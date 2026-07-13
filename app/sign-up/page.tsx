@@ -1,11 +1,12 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { ModeToggle } from "@/components/mode-toggle";
 import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
+
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -13,10 +14,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useState } from "react";
 import Image from "next/image";
-import { Loader2, X } from "lucide-react";
+import { Loader2, Shield, X } from "lucide-react";
 import { signUp } from "@/lib/auth-client";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
+
 import Link from "next/link";
 
 export default function SignUp() {
@@ -27,7 +28,7 @@ export default function SignUp() {
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const router = useRouter();
+
   const [loading, setLoading] = useState(false);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -43,18 +44,26 @@ export default function SignUp() {
   };
 
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
-      <div className="w-full max-w-sm">
-        <Card className="z-50 rounded-md max-w-md">
-          <CardHeader>
-            <CardTitle className="text-lg md:text-xl">Sign Up</CardTitle>
+    <div className="relative flex min-h-svh w-full items-center justify-center overflow-hidden bg-muted/30 px-4 py-16 sm:px-6">
+      <div className="absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_top_right,var(--color-primary),transparent_65%)] opacity-10" />
+      <Link href="/" className="fixed left-4 top-4 z-50 flex items-center gap-2 font-semibold sm:left-6 sm:top-6">
+        <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm"><Shield className="size-5" /></span>
+        <span className="hidden sm:inline">InsurePortal</span>
+      </Link>
+      <div className="fixed right-4 top-4 z-50 sm:right-6 sm:top-6">
+        <ModeToggle />
+      </div>
+      <div className="relative w-full max-w-lg">
+        <Card className="border bg-card shadow-xl shadow-foreground/5">
+          <CardHeader className="border-b pb-5">
+            <CardTitle className="text-2xl font-semibold">Create your account</CardTitle>
             <CardDescription className="text-xs md:text-sm">
-              Enter your information to create an account
+              Set up secure access to your insurance portal.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="grid gap-2">
                   <Label htmlFor="first-name">First name</Label>
                   <Input
@@ -119,7 +128,7 @@ export default function SignUp() {
                 <Label htmlFor="image">Profile Image (optional)</Label>
                 <div className="flex items-end gap-4">
                   {imagePreview && (
-                    <div className="relative w-16 h-16 rounded-sm overflow-hidden">
+                    <div className="relative size-16 shrink-0 overflow-hidden rounded-lg border">
                       <Image
                         src={imagePreview}
                         alt="Profile preview"
@@ -128,7 +137,7 @@ export default function SignUp() {
                       />
                     </div>
                   )}
-                  <div className="flex items-center gap-2 w-full">
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
                     <Input
                       id="image"
                       type="file"
@@ -138,7 +147,7 @@ export default function SignUp() {
                     />
                     {imagePreview && (
                       <X
-                        className="cursor-pointer"
+                        className="size-5 shrink-0 cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
                         onClick={() => {
                           setImage(null);
                           setImagePreview(null);
@@ -184,7 +193,7 @@ export default function SignUp() {
               </Button>
               <div className="text-center text-sm">
                 Already have an account?{" "}
-                <Link href="/sign-in" className="underline underline-offset-4">
+                <Link href="/sign-in" className="font-medium text-primary hover:underline">
                   Sign in
                 </Link>
               </div>

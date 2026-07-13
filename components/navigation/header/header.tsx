@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { OrgSwitcher } from "@/components/navigation/org-switcher";
+import { ModeToggle } from "@/components/mode-toggle";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
   LayoutDashboard,
@@ -179,7 +180,7 @@ export function Header({
         </NavigationMenu>
 
         {/* Right side: org switcher + avatar */}
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex min-w-0 items-center gap-1 sm:gap-3">
           {organizations &&
             organizations.length > 0 &&
             onOrganizationChange &&
@@ -192,6 +193,8 @@ export function Header({
                 />
               </div>
             )}
+
+          <ModeToggle />
 
           {/* Avatar dropdown */}
           <DropdownMenu>

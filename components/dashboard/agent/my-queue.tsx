@@ -111,7 +111,7 @@ export function MyQueue({
       </CardHeader>
       <CardContent>
         {filtered.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-6 text-center">
+          <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center">
             <p className="text-sm text-muted-foreground">
               No claims in this category.
             </p>
@@ -125,7 +125,7 @@ export function MyQueue({
               return (
                 <div
                   key={claim.id}
-                  className={`rounded-lg border p-3 transition-all cursor-pointer hover:bg-muted/30 ${
+                  className={`rounded-lg border bg-background/70 p-3 transition-all cursor-pointer hover:bg-muted/30 ${
                     isSelected ? "ring-2 ring-primary/50 border-primary/30" : ""
                   }`}
                   onClick={() => onSelectClaim?.(claim)}

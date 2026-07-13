@@ -129,7 +129,7 @@ export function AgentOrgAssignments({
       </CardHeader>
       <CardContent>
         {/* Assignment form */}
-        <div className="mb-4 rounded-lg border border-dashed p-4">
+        <div className="mb-4 rounded-lg border border-dashed bg-muted/20 p-4">
           <p className="mb-3 text-sm font-medium text-foreground">
             Create New Assignment
           </p>
@@ -191,7 +191,7 @@ export function AgentOrgAssignments({
 
         {/* Assignment list */}
         {assignments.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-6 text-center">
+          <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center">
             <p className="text-sm text-muted-foreground">
               No assignments yet. Link an agent to an organization above.
             </p>
@@ -201,7 +201,7 @@ export function AgentOrgAssignments({
             {assignments.map((a) => (
               <div
                 key={a.id}
-                className="flex flex-col gap-2 rounded-lg border p-3 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-2 rounded-lg border bg-background/70 p-3 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2">

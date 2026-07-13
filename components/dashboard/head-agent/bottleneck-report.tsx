@@ -96,7 +96,7 @@ export function BottleneckReport({ metrics }: BottleneckReportProps) {
         </div>
 
         {/* Summary stats */}
-        <div className="mt-5 grid grid-cols-3 gap-3">
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
           <div className="rounded-lg border bg-muted/30 p-2.5 text-center">
             <p className="text-xs text-muted-foreground">Total Avg</p>
             <p className="text-lg font-bold text-foreground">

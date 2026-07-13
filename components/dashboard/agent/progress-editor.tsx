@@ -163,7 +163,7 @@ export function ProgressEditor({
           {steps.map((step, index) => (
             <div
               key={step.id}
-              className={`group flex items-start gap-3 rounded-lg border p-3 transition-all ${
+              className={`group flex items-start gap-3 rounded-lg border bg-background/70 p-3 transition-all ${
                 step.isCompleted
                   ? "border-emerald-500/20 bg-emerald-500/5"
                   : "border-border hover:border-primary/30 hover:bg-primary/5"
@@ -293,7 +293,7 @@ export function ProgressEditor({
         )}
 
         {steps.length === 0 && !showAddForm && (
-          <div className="rounded-lg border border-dashed p-6 text-center">
+          <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center">
             <p className="text-sm text-muted-foreground">
               No progress steps yet. Add steps to track this claim&apos;s journey
               through the insurance carrier&apos;s process.

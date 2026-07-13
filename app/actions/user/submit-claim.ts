@@ -14,7 +14,7 @@ import {
   user,
 } from "@/db/schema";
 import { requireSession } from "@/lib/session";
-import { requirePermission, permissions } from "@/lib/permissions";
+import { hasPermission, permissions } from "@/lib/permissions";
 import { eq, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { buildClaimFileKey, getUploadUrl } from "@/lib/storage";
@@ -100,7 +100,9 @@ const motorClaimFormSchema = z.object({
 
 export async function submitMotorClaim(data: z.infer<typeof motorClaimFormSchema>) {
   const session = await requireSession();
-  requirePermission(session.role, permissions.CLAIM_CREATE);
+  if (!hasPermission(session.role, permissions.CLAIM_CREATE)) {
+    return { success: false, error: "You do not have permission to create claims" };
+  }
 
   const parsed = motorClaimFormSchema.safeParse(data);
   if (!parsed.success) {
@@ -234,7 +236,9 @@ const burglaryClaimFormSchema = z.object({
 
 export async function submitBurglaryClaim(data: z.infer<typeof burglaryClaimFormSchema>) {
   const session = await requireSession();
-  requirePermission(session.role, permissions.CLAIM_CREATE);
+  if (!hasPermission(session.role, permissions.CLAIM_CREATE)) {
+    return { success: false, error: "You do not have permission to create claims" };
+  }
 
   const parsed = burglaryClaimFormSchema.safeParse(data);
   if (!parsed.success) {

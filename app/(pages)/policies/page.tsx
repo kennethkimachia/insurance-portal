@@ -29,10 +29,10 @@ export default async function PoliciesPage() {
   const isPolicyholder = session?.role === "user";
 
   return (
-    <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
+    <main className="mx-auto min-h-[calc(100svh-3.5rem)] max-w-7xl space-y-8 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
       <div>
         <Badge variant="secondary" className="mb-3">Available cover</Badge>
-        <h1 className="text-3xl font-bold tracking-tight">Insurance policies</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">Insurance policies</h1>
         <p className="mt-2 max-w-2xl text-muted-foreground">
           Review the policy products supported by the claims portal and the evidence normally needed when filing.
         </p>
@@ -40,7 +40,7 @@ export default async function PoliciesPage() {
 
       <section className="grid gap-5 md:grid-cols-2">
         {policyProducts.map(({ type, title, description, Icon, documents }) => (
-          <Card key={type} className="overflow-hidden">
+          <Card key={type} className="overflow-hidden transition-shadow hover:shadow-md">
             <CardHeader>
               <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10">
                 <Icon className="h-5 w-5 text-primary" />
@@ -62,7 +62,7 @@ export default async function PoliciesPage() {
       </section>
 
       <section>
-        <div className="mb-4 flex items-end justify-between gap-4">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-xl font-semibold">{isPolicyholder ? "Your policies" : "Policies in this organization"}</h2>
             <p className="text-sm text-muted-foreground">Policy numbers use MOT-ORG-##### or BRG-ORG-#####.</p>
@@ -80,10 +80,10 @@ export default async function PoliciesPage() {
                     <div className="rounded-lg bg-emerald-500/10 p-2"><ShieldCheck className="h-5 w-5 text-emerald-600" /></div>
                     <div>
                       <p className="font-mono font-semibold">{policy.policyNumber}</p>
-                      <p className="text-sm capitalize text-muted-foreground">{policy.policyType} policy ? {policy.policyholderName}</p>
+                      <p className="text-sm capitalize text-muted-foreground">{policy.policyType} policy · {policy.policyholderName}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground sm:justify-end">
                     <Building2 className="h-4 w-4" /> {policy.organizationName}
                   </div>
                 </CardContent>

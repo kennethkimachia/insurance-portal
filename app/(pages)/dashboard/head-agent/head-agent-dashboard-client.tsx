@@ -50,11 +50,11 @@ export function HeadAgentDashboardClient({
   const firstAssignedAgent = agents.find((a) => a.latestClaim);
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div className="min-h-[calc(100svh-3.5rem)] bg-muted/30">
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             Head Agent Dashboard
           </h1>
           <p className="mt-1 text-muted-foreground">

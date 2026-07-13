@@ -113,7 +113,7 @@ export function ManageOrganizations({
         {showForm && (
           <form
             onSubmit={handleCreate}
-            className="mb-4 space-y-3 rounded-lg border border-dashed p-4"
+            className="mb-4 space-y-3 rounded-lg border border-dashed bg-muted/20 p-4"
           >
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
@@ -125,7 +125,7 @@ export function ManageOrganizations({
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   disabled={isPending}
-                  className="flex h-9 w-full rounded-lg border border-input bg-transparent px-3 py-1 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                  className="flex h-9 w-full rounded-lg border border-input bg-background px-3 py-1 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                   placeholder="e.g. ABC Insurance"
                 />
                 {fieldErrors.name && (
@@ -144,7 +144,7 @@ export function ManageOrganizations({
                   onChange={(e) => setCode(e.target.value.toUpperCase())}
                   maxLength={20}
                   disabled={isPending}
-                  className="flex h-9 w-full rounded-lg border border-input bg-transparent px-3 py-1 text-sm font-mono text-foreground transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                  className="flex h-9 w-full rounded-lg border border-input bg-background px-3 py-1 text-sm font-mono text-foreground transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                   placeholder="e.g. ABC"
                 />
                 {fieldErrors.code && (
@@ -190,7 +190,7 @@ export function ManageOrganizations({
           {orgs.map((org) => (
             <div
               key={org.id}
-              className="flex flex-col gap-2 rounded-lg border p-3 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between"
+              className="flex flex-col gap-2 rounded-lg border bg-background/70 p-3 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2">

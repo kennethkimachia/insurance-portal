@@ -108,10 +108,10 @@ export function UserDashboardClient({
 
   if (filteredClaims.length === 0) {
     return (
-      <div className="min-h-screen bg-background">
-        <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className="min-h-[calc(100svh-3.5rem)] bg-muted/30">
+        <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
           <div className="mb-8">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
               Welcome, {userName}
             </h1>
             <p className="mt-1 text-muted-foreground">
@@ -122,7 +122,7 @@ export function UserDashboardClient({
           {/* Show policies if any */}
           {filteredPolicies.length > 0 ? (
             <div className="space-y-4">
-              <div className="rounded-xl border bg-card p-6">
+              <div className="rounded-xl border bg-card p-5 shadow-sm sm:p-6">
                 <h3 className="text-lg font-semibold text-foreground">
                   Your Policies
                 </h3>
@@ -130,7 +130,7 @@ export function UserDashboardClient({
                   {filteredPolicies.map((p) => (
                     <div
                       key={p.id}
-                      className="flex items-center justify-between rounded-lg border p-4"
+                      className="flex flex-col gap-3 rounded-lg border bg-background p-4 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div>
                         <p className="font-mono text-sm font-semibold text-foreground">
@@ -185,11 +185,11 @@ export function UserDashboardClient({
   })();
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+    <div className="min-h-[calc(100svh-3.5rem)] bg-muted/30">
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             Welcome back, {userName}
           </h1>
           <p className="mt-1 text-muted-foreground">
@@ -199,15 +199,15 @@ export function UserDashboardClient({
 
         {/* Claim selector if multiple claims */}
         {filteredClaims.length > 1 && (
-          <div className="mb-4 flex gap-2 overflow-x-auto pb-2">
+          <div className="mb-5 flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none]">
             {filteredClaims.map((claim, i) => (
               <button
                 key={claim.id}
                 onClick={() => handleClaimChange(i)}
                 className={`shrink-0 rounded-lg border px-3 py-2 text-sm transition-colors ${
                   i === selectedClaimIndex
-                    ? "border-primary bg-primary/5 font-semibold text-primary"
-                    : "border-border text-muted-foreground hover:bg-muted/30"
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                    : "border-border bg-card text-muted-foreground hover:bg-muted"
                 }`}
               >
                 {claim.claimNumber}

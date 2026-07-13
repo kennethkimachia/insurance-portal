@@ -79,7 +79,7 @@ export function UnassignedClaims({ claims, agents }: UnassignedClaimsProps) {
       </CardHeader>
       <CardContent>
         {items.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-6 text-center">
+          <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center">
             <p className="text-sm text-muted-foreground">
               All claims have been assigned. Nice work!
             </p>
@@ -89,7 +89,7 @@ export function UnassignedClaims({ claims, agents }: UnassignedClaimsProps) {
             {items.map((claim) => (
               <div
                 key={claim.id}
-                className="flex flex-col gap-3 rounded-lg border p-4 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-3 rounded-lg border bg-background/70 p-4 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="flex-1 space-y-1">
                   <div className="flex items-center gap-2">

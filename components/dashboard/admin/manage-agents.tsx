@@ -145,7 +145,7 @@ export function ManageAgents({
         {showInvite && (
           <form
             onSubmit={handleInvite}
-            className="mb-4 space-y-3 rounded-lg border border-dashed p-4"
+            className="mb-4 space-y-3 rounded-lg border border-dashed bg-muted/20 p-4"
           >
             <div className="grid gap-3 lg:grid-cols-3">
               <div className="space-y-1.5">
@@ -156,7 +156,7 @@ export function ManageAgents({
                   type="email"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
-                  className="flex h-9 w-full rounded-lg border border-input bg-transparent px-3 py-1 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex h-9 w-full rounded-lg border border-input bg-background px-3 py-1 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   placeholder="agent@example.com"
                 />
               </div>
@@ -240,7 +240,7 @@ export function ManageAgents({
             {agents.map((agent) => (
               <div
                 key={agent.id}
-                className="flex flex-col gap-2 rounded-lg border p-3 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-2 rounded-lg border bg-background/70 p-3 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="flex items-center gap-3">
                   <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted">
@@ -275,7 +275,7 @@ export function ManageAgents({
         ) : (
           <div className="space-y-2">
             {invites.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-center">
+              <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center">
                 <p className="text-sm text-muted-foreground">
                   No invitations sent yet.
                 </p>

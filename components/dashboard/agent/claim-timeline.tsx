@@ -94,7 +94,7 @@ export function ClaimTimeline({
         {/* Timeline entries */}
         <div className="flex-1 space-y-3 overflow-y-auto max-h-72 pr-1">
           {entries.length === 0 ? (
-            <div className="rounded-lg border border-dashed p-4 text-center">
+            <div className="rounded-lg border border-dashed bg-muted/20 p-4 text-center">
               <p className="text-sm text-muted-foreground">
                 No updates yet. Add the first note below.
               </p>
@@ -148,7 +148,7 @@ export function ClaimTimeline({
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Type an update for the policyholder..."
-            className="flex-1 resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             rows={2}
           />
           <Button

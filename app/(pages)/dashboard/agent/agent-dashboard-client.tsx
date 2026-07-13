@@ -96,10 +96,10 @@ export function AgentDashboardClient({
 
   if (filteredClaims.length === 0) {
     return (
-      <div className="min-h-screen bg-background">
-        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className="min-h-[calc(100svh-3.5rem)] bg-muted/30">
+        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
           <div className="mb-8">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
               Agent Dashboard
             </h1>
             <p className="mt-1 text-muted-foreground">
@@ -112,7 +112,7 @@ export function AgentDashboardClient({
               organizationId={currentOrg?.id}
               organizationName={currentOrg?.name}
             />
-            <div className="rounded-xl border bg-card p-6">
+            <div className="rounded-xl border bg-card p-5 shadow-sm sm:p-6">
               <h3 className="text-lg font-semibold text-foreground">
                 Getting Started
               </h3>
@@ -139,11 +139,11 @@ export function AgentDashboardClient({
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div className="min-h-[calc(100svh-3.5rem)] bg-muted/30">
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             Agent Dashboard
           </h1>
           <p className="mt-1 text-muted-foreground">
@@ -210,7 +210,7 @@ export function AgentDashboardClient({
             organizationId={currentOrg?.id}
             organizationName={currentOrg?.name}
           />
-          <div className="rounded-xl border bg-card p-6">
+          <div className="rounded-xl border bg-card p-5 shadow-sm sm:p-6">
             <h3 className="text-lg font-semibold text-foreground">
               Quick Tips
             </h3>
