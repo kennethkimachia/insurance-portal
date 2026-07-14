@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Button } from "@/components/ui/button";
 import { ModeToggle } from "@/components/mode-toggle";
@@ -65,7 +65,7 @@ export default function SignIn() {
                 <div className="flex items-center">
                   <Label htmlFor="password">Password</Label>
                   <Link
-                    href="#"
+                    href="/reset-password"
                     className="ml-auto text-xs font-medium text-primary hover:underline"
                   >
                     Forgot your password?
@@ -132,3 +132,4 @@ export default function SignIn() {
     </div>
   );
 }
+

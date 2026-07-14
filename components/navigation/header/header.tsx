@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -34,7 +34,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// ── Types ────────────────────────────────────────────────────────────────
+// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type UserRole = "admin" | "head_agent" | "agent" | "user";
 
@@ -57,7 +57,7 @@ interface HeaderProps {
   onOrganizationChange?: (orgId: string) => void;
 }
 
-// ── Nav items by role ────────────────────────────────────────────────────
+// â”€â”€ Nav items by role â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const NAV_ITEMS: NavItem[] = [
   {
@@ -100,7 +100,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Customers",
     href: ROUTES.CUSTOMERS,
     icon: Users,
-    roles: ["admin", "head_agent", "agent"],
+    roles: ["admin", "head_agent"],
   },
   {
     label: "Agents",
@@ -112,11 +112,11 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Organizations",
     href: ROUTES.ORGANIZATIONS,
     icon: Building2,
-    roles: ["admin"],
+    roles: ["admin", "head_agent", "agent"],
   },
 ];
 
-// ── Component ────────────────────────────────────────────────────────────
+// â”€â”€ Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function Header({
   user,
@@ -139,7 +139,7 @@ export function Header({
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4 sm:px-6 lg:px-8">
-        {/* Mobile sidebar trigger — uses shadcn SidebarTrigger */}
+        {/* Mobile sidebar trigger â€” uses shadcn SidebarTrigger */}
         <SidebarTrigger className="lg:hidden" />
 
         {/* Logo */}
@@ -151,7 +151,7 @@ export function Header({
           <span className="hidden sm:inline">InsurePortal</span>
         </Link>
 
-        {/* Desktop nav — shadcn NavigationMenu */}
+        {/* Desktop nav â€” shadcn NavigationMenu */}
         <NavigationMenu className="hidden lg:flex" viewport={false}>
           <NavigationMenuList>
             {visibleItems.map((item) => {
@@ -248,3 +248,5 @@ export function Header({
     </header>
   );
 }
+
+

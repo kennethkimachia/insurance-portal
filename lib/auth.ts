@@ -1,9 +1,12 @@
-import { betterAuth } from "better-auth";
+﻿import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/db";
+import { nextCookies } from "better-auth/next-js";
+import { sendEmail } from "@/lib/email";
 import {
-    nextCookies
-} from "better-auth/next-js";
+  getPasswordResetEmailHtml,
+  getVerifyEmailHtml,
+} from "@/lib/emailTemplates";
 
 export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_BASE_URL,
@@ -27,13 +30,24 @@ export const auth = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
-    async sendResetPassword(data, request) {
-            // Send an email to the user with a link to reset their password
-        },
+    async sendResetPassword({ user, url }) {
+      await sendEmail({
+        to: user.email,
+        subject: "Reset your Insurance Portal password",
+        html: getPasswordResetEmailHtml(url),
+        category: "password-reset",
+      });
+    },
   },
-  plugins: [
-    nextCookies(),
-
-  ]
-  ,
+  emailVerification: {
+    async sendVerificationEmail({ user, url }) {
+      await sendEmail({
+        to: user.email,
+        subject: "Verify your Insurance Portal email",
+        html: getVerifyEmailHtml(url),
+        category: "email-verification",
+      });
+    },
+  },
+  plugins: [nextCookies()],
 });
