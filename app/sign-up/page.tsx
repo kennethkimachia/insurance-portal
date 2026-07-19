@@ -17,13 +17,17 @@ import Image from "next/image";
 import { Loader2, Shield, X } from "lucide-react";
 import { signUp } from "@/lib/auth-client";
 import { toast } from "sonner";
-
+import { useRouter, useSearchParams } from "next/navigation";
+import { acceptInvitationByToken } from "@/app/actions/admin/manage-agents";
 import Link from "next/link";
 
 export default function SignUp() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const invitationToken = searchParams.get("token");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [image, setImage] = useState<File | null>(null);
@@ -162,11 +166,30 @@ export default function SignUp() {
                 className="w-full"
                 disabled={loading}
                 onClick={async () => {
+                  const trimmedFirstName = firstName.trim();
+                  const trimmedLastName = lastName.trim();
+                  const normalizedEmail = email.trim().toLowerCase();
+
+                  if (!trimmedFirstName || !trimmedLastName || !normalizedEmail || !password) {
+                    toast.error("Please fill in your name, email, and password.");
+                    return;
+                  }
+
+                  if (password.length < 8) {
+                    toast.error("Password must be at least 8 characters.");
+                    return;
+                  }
+
+                  if (password !== passwordConfirmation) {
+                    toast.error("Passwords do not match.");
+                    return;
+                  }
+
                   await signUp.email({
-                    email,
+                    email: normalizedEmail,
                     password,
-                    name: `${firstName} ${lastName}`,
-                    image: image ? await convertImageToBase64(image) : "",
+                    name: `${trimmedFirstName} ${trimmedLastName}`,
+                    image: image ? await convertImageToBase64(image) : undefined,
                     callbackURL: "/dashboard",
                     fetchOptions: {
                       onResponse: () => {
@@ -178,8 +201,16 @@ export default function SignUp() {
                       onError: (ctx) => {
                         toast.error(ctx.error.message);
                       },
-                      onSuccess: () => {
-                        window.location.href = "/dashboard";
+                      onSuccess: async () => {
+                        if (invitationToken) {
+                          const result = await acceptInvitationByToken(invitationToken, normalizedEmail);
+                          if (result.success) {
+                            toast.success("Invitation accepted! You've been added to the organization.");
+                          } else {
+                            toast.error(result.error ?? "Invitation could not be accepted");
+                          }
+                        }
+                        router.push("/dashboard");
                       },
                     },
                   });

@@ -11,60 +11,81 @@
 //   npx tsx scripts/seed-admin.ts
 // ============================================================
 
-import "dotenv/config";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { eq } from "drizzle-orm";
-import { user, account } from "../db/schema/auth";
-import { randomUUID } from "crypto";
-import { hashPassword } from "better-auth/crypto";
-import * as readline from "readline";
+import * as readline from "readline/promises";
 
-function prompt(question: string): Promise<string> {
+async function main() {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
   });
 
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
-}
-
-async function main() {
-  const db = drizzle(process.env.DATABASE_URL!);
-
   console.log("\n🔧 Create Admin User\n");
 
-  const name = await prompt("  Name: ");
-  const email = await prompt("  Email: ");
-  const password = await prompt("  Password: ");
+  const name = await rl.question("  Name: ");
+  const email = await rl.question("  Email: ");
+  const password = await rl.question("  Password: ");
 
-  if (!name || !email || !password) {
+  rl.close();
+
+  if (!name.trim() || !email.trim() || !password.trim()) {
     console.error("\n❌ All fields are required.\n");
     process.exit(1);
   }
 
+  // Defer heavy imports until after prompts to avoid stdin interference
+  const { config } = await import("dotenv");
+  config();
+
+  const { drizzle } = await import("drizzle-orm/node-postgres");
+  const { eq } = await import("drizzle-orm");
+  const { user, account } = await import("../db/schema/auth");
+  const { randomUUID } = await import("crypto");
+  const { hashPassword } = await import("better-auth/crypto");
+
+  const db = drizzle(process.env.DATABASE_URL!);
+
   const existing = await db
     .select()
     .from(user)
-    .where(eq(user.email, email))
+    .where(eq(user.email, email.trim()))
     .limit(1);
 
+  const userId = randomUUID();
+  const hashedPassword = await hashPassword(password.trim());
+
   if (existing.length > 0) {
-    console.log("\n⚠️  A user with that email already exists. Skipping.\n");
+    // User exists — check if they have an account (may have been lost during migration)
+    const existingAccount = await db
+      .select()
+      .from(account)
+      .where(eq(account.userId, existing[0].id))
+      .limit(1);
+
+    if (existingAccount.length > 0) {
+      console.log("\n⚠️  A user with that email already exists. Skipping.\n");
+      process.exit(0);
+    }
+
+    // User exists but no account — recreate the credential account
+    console.log("\n🔄 User found but missing account record. Recreating...");
+    await db.insert(account).values({
+      id: randomUUID(),
+      accountId: existing[0].id,
+      providerId: "credential",
+      userId: existing[0].id,
+      password: hashedPassword,
+    });
+
+    console.log("✅ Account record restored successfully!");
+    console.log(`   Email: ${email.trim()}`);
+    console.log(`   Password has been updated.\n`);
     process.exit(0);
   }
 
-  const userId = randomUUID();
-  const hashedPassword = await hashPassword(password);
-
   await db.insert(user).values({
     id: userId,
-    name,
-    email,
+    name: name.trim(),
+    email: email.trim(),
     emailVerified: true,
     role: "admin",
     organizationId: null,
@@ -79,8 +100,8 @@ async function main() {
   });
 
   console.log("\n✅ Admin user created successfully!");
-  console.log(`   Name:  ${name}`);
-  console.log(`   Email: ${email}`);
+  console.log(`   Name:  ${name.trim()}`);
+  console.log(`   Email: ${email.trim()}`);
   console.log(`   Role:  admin\n`);
 
   process.exit(0);

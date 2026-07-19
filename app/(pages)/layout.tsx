@@ -1,11 +1,12 @@
 import { getSessionUser } from "@/lib/session";
 import { db } from "@/db";
-import { organizations, agentOrganizations } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { organizations, agentOrganizations, invitations, user } from "@/db/schema";
+import { eq, desc, and } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { ROUTES } from "@/lib/routes";
 import { DashboardLayoutClient } from "./layout-client";
 import { getActiveOrganizationId } from "@/lib/organization-access";
+import { acceptInvitationByToken } from "@/app/actions/admin/manage-agents";
 
 export default async function DashboardLayout({
   children,
@@ -16,6 +17,32 @@ export default async function DashboardLayout({
 
   if (!sessionUser) {
     redirect(ROUTES.SIGNIN);
+  }
+
+  // Safety net: if user still has role "user" but has a pending invitation,
+  // accept it now (catches cases where sign-up invitation acceptance failed)
+  if (sessionUser.role === "user") {
+    const [pendingInvitation] = await db
+      .select({ token: invitations.token })
+      .from(invitations)
+      .where(
+        and(
+          eq(invitations.email, sessionUser.email.toLowerCase()),
+          eq(invitations.status, "pending")
+        )
+      )
+      .limit(1);
+
+    if (pendingInvitation) {
+      const result = await acceptInvitationByToken(
+        pendingInvitation.token,
+        sessionUser.email
+      );
+      if (result.success) {
+        // Redirect to refresh the session with updated role/org
+        redirect(ROUTES.DASHBOARD);
+      }
+    }
   }
 
   // Fetch organizations based on role
@@ -63,6 +90,9 @@ export default async function DashboardLayout({
       .limit(1);
     if (userOrg) orgs = [userOrg];
   }
+
+  // Deduplicate organizations by id to prevent duplicate key errors
+  orgs = [...new Map(orgs.map((o) => [o.id, o])).values()];
 
   const activeOrganizationId = await getActiveOrganizationId(sessionUser);
   return (

@@ -58,29 +58,100 @@ export async function inviteAgent(data: z.infer<typeof inviteSchema>) {
 }
 
 export async function acceptInvitation(token: string) {
-  const session = await requireSession();
-  const [invitation] = await db.select().from(invitations)
-    .where(and(eq(invitations.token, token), eq(invitations.status, "pending"))).limit(1);
-  if (!invitation || invitation.expiresAt < new Date()) {
-    return { success: false, error: "This invitation is invalid or has expired." };
-  }
-  if (invitation.email.toLowerCase() !== session.email.toLowerCase()) {
-    return { success: false, error: "This invitation was issued to a different email address." };
-  }
-
-  await db.transaction(async (tx) => {
-    await tx.update(user)
-      .set({ role: invitation.role, organizationId: invitation.organizationId })
-      .where(eq(user.id, session.id));
-    if (invitation.role === "agent" || invitation.role === "head_agent") {
-      await tx.insert(agentOrganizations)
-        .values({ agentId: session.id, organizationId: invitation.organizationId })
-        .onConflictDoNothing();
+  try {
+    const session = await requireSession();
+    const [invitation] = await db.select().from(invitations)
+      .where(and(eq(invitations.token, token), eq(invitations.status, "pending"))).limit(1);
+    if (!invitation || invitation.expiresAt < new Date()) {
+      return { success: false, error: "This invitation is invalid or has expired." };
     }
-    await tx.update(invitations).set({ status: "accepted" })
-      .where(eq(invitations.id, invitation.id));
-  });
-  return { success: true };
+    if (invitation.email.toLowerCase() !== session.email.toLowerCase()) {
+      return { success: false, error: "This invitation was issued to a different email address." };
+    }
+
+    await db.transaction(async (tx) => {
+      await tx.update(user)
+        .set({ role: invitation.role, organizationId: invitation.organizationId })
+        .where(eq(user.id, session.id));
+      if (invitation.role === "agent" || invitation.role === "head_agent") {
+        await tx.insert(agentOrganizations)
+          .values({ agentId: session.id, organizationId: invitation.organizationId })
+          .onConflictDoNothing();
+      }
+      await tx.update(invitations).set({ status: "accepted" })
+        .where(eq(invitations.id, invitation.id));
+    });
+    return { success: true };
+  } catch (error) {
+    console.error("Accept invitation error:", error);
+    return { success: false, error: "Failed to accept invitation. Please try again from the dashboard." };
+  }
+}
+
+/**
+ * Accept an invitation using only the token and the email address.
+ * This does NOT require an authenticated session, so it can safely be called
+ * immediately after sign-up before the session cookie has propagated.
+ */
+export async function acceptInvitationByToken(token: string, email: string) {
+  try {
+    if (!token || !email) {
+      return { success: false, error: "Token and email are required." };
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const [invitation] = await db
+      .select()
+      .from(invitations)
+      .where(
+        and(eq(invitations.token, token), eq(invitations.status, "pending"))
+      )
+      .limit(1);
+
+    if (!invitation || invitation.expiresAt < new Date()) {
+      return { success: false, error: "This invitation is invalid or has expired." };
+    }
+
+    if (invitation.email.toLowerCase() !== normalizedEmail) {
+      return { success: false, error: "This invitation was issued to a different email address." };
+    }
+
+    // Find the user who just signed up with this email
+    const [invitedUser] = await db
+      .select({ id: user.id })
+      .from(user)
+      .where(eq(user.email, normalizedEmail))
+      .limit(1);
+
+    if (!invitedUser) {
+      return { success: false, error: "No account found for this email. Please sign up first." };
+    }
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(user)
+        .set({ role: invitation.role, organizationId: invitation.organizationId })
+        .where(eq(user.id, invitedUser.id));
+
+      if (invitation.role === "agent" || invitation.role === "head_agent") {
+        await tx
+          .insert(agentOrganizations)
+          .values({ agentId: invitedUser.id, organizationId: invitation.organizationId })
+          .onConflictDoNothing();
+      }
+
+      await tx
+        .update(invitations)
+        .set({ status: "accepted" })
+        .where(eq(invitations.id, invitation.id));
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error("Accept invitation by token error:", error);
+    return { success: false, error: "Failed to accept invitation. Please try again from the dashboard." };
+  }
 }
 
 export async function assignAgentToOrganization(agentId: string, organizationId: string) {

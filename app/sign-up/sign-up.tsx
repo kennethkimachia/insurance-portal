@@ -17,7 +17,7 @@ import { Loader2, X } from "lucide-react";
 import { signUp } from "@/lib/auth-client";
 import { toast } from "sonner";
 import { useRouter, useSearchParams } from "next/navigation";
-import { acceptInvitation } from "@/app/actions/admin/manage-agents";
+import { acceptInvitationByToken } from "@/app/actions/admin/manage-agents";
 
 export default function SignUp() {
   const searchParams = useSearchParams();
@@ -171,10 +171,12 @@ export default function SignUp() {
                   },
                   onSuccess: async () => {
                     if (invitationToken) {
-                      const result = await acceptInvitation(invitationToken);
-                      if (!result.success) {
+                      const normalizedEmail = email.trim().toLowerCase();
+                      const result = await acceptInvitationByToken(invitationToken, normalizedEmail);
+                      if (result.success) {
+                        toast.success("Invitation accepted! You've been added to the organization.");
+                      } else {
                         toast.error(result.error ?? "Invitation could not be accepted");
-                        return;
                       }
                     }
                     router.push("/dashboard");
