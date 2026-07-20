@@ -53,8 +53,8 @@ export type Permission = (typeof permissions)[keyof typeof permissions];
 const ROLE_PERMISSIONS: Record<Permission, Role[]> = {
   // Claims
   [permissions.CLAIM_READ]: ["admin", "agent", "head_agent", "user"],
-  [permissions.CLAIM_READ_OWN]: ["user"],
-  [permissions.CLAIM_READ_ASSIGNED]: ["agent"],
+  [permissions.CLAIM_READ_OWN]: ["user", "admin"],
+  [permissions.CLAIM_READ_ASSIGNED]: ["agent", "admin"],
   [permissions.CLAIM_READ_ALL]: ["admin", "head_agent"],
   [permissions.CLAIM_CREATE]: ["user", "agent", "head_agent", "admin"],
   [permissions.CLAIM_ASSIGN]: ["head_agent", "admin"],

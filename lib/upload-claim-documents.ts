@@ -1,7 +1,4 @@
-import {
-  getClaimUploadUrl,
-  recordClaimAttachment,
-} from "@/app/actions/user/submit-claim";
+import { recordClaimAttachment } from "@/app/actions/user/submit-claim";
 import type { DocumentUploads } from "@/components/claims/document-uploader";
 
 export async function uploadClaimDocuments(
@@ -16,21 +13,23 @@ export async function uploadClaimDocuments(
       throw new Error(`${uploadedFile.name} exceeds the 50 MB upload limit`);
     }
 
-    const { url, key } = await getClaimUploadUrl(
-      claimId,
-      organizationId,
-      uploadedFile.name,
-      uploadedFile.type,
-    );
-    const response = await fetch(url, {
-      method: "PUT",
-      headers: { "Content-Type": uploadedFile.type },
-      body: uploadedFile.file,
+    // Upload via our server-side proxy to avoid B2 CORS issues
+    const formData = new FormData();
+    formData.append("file", uploadedFile.file, uploadedFile.name);
+    formData.append("claimId", claimId);
+    formData.append("organizationId", organizationId);
+
+    const response = await fetch("/api/upload", {
+      method: "POST",
+      body: formData,
     });
 
     if (!response.ok) {
-      throw new Error(`Could not upload ${uploadedFile.name}`);
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error || `Could not upload ${uploadedFile.name}`);
     }
+
+    const { key } = await response.json();
 
     await recordClaimAttachment({
       claimId,
@@ -41,3 +40,4 @@ export async function uploadClaimDocuments(
     });
   }
 }
+
