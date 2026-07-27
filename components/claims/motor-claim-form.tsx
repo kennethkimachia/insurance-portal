@@ -119,14 +119,6 @@ const MOTOR_DOC_CATEGORIES: DocumentCategory[] = [
     accept: "image/*,video/*",
     multiple: true,
   },
-  {
-    key: "repair_estimate",
-    label: "Repair Estimate",
-    description: "Formal repair estimate from an approved garage",
-    required: true,
-    accept: "image/*,.pdf",
-    multiple: false,
-  },
 ];
 
 // ── Blank form ───────────────────────────────────────────────────────────

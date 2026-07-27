@@ -9,15 +9,16 @@ import {
   claimAttachments,
   motorClaimDetails,
   burglaryClaimDetails,
+  burglaryLossItems,
   user,
   organizations,
 } from "@/db/schema";
 import { requireSession } from "@/lib/session";
 import { requirePermission, permissions } from "@/lib/permissions";
-import { eq, and, desc, asc, or, sql } from "drizzle-orm";
+import { eq, and, desc, asc } from "drizzle-orm";
 
 import { getActiveOrganizationId, requireOrganizationAccess } from "@/lib/organization-access";
-// ── Get my assigned claims ─────────────────────────────────────────────
+// â”€â”€ Get my assigned claims â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getMyAssignedClaims() {
   const session = await requireSession();
@@ -50,7 +51,7 @@ export async function getMyAssignedClaims() {
   }));
 }
 
-// ── Get full claim details ─────────────────────────────────────────────
+// â”€â”€ Get full claim details â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getClaimDetails(claimId: string) {
   const session = await requireSession();
@@ -81,18 +82,76 @@ export async function getClaimDetails(claimId: string) {
   if (!claim) return null;
 
   await requireOrganizationAccess(session, claim.organizationId);
-  // Auth check — only the assigned agent, head_agent, or admin can view
+  // Auth check â€” only the assigned agent, head_agent, or admin can view
   if (session.role === "agent" && claim.assignedAgentId !== session.id) {
     return null;
   }
 
+  const attachments = await db
+    .select({
+      id: claimAttachments.id,
+      originalFilename: claimAttachments.originalFilename,
+      contentType: claimAttachments.contentType,
+      sizeBytes: claimAttachments.sizeBytes,
+      createdAt: claimAttachments.createdAt,
+    })
+    .from(claimAttachments)
+    .where(eq(claimAttachments.claimId, claimId))
+    .orderBy(desc(claimAttachments.createdAt));
+
+  const [motorDetails] =
+    claim.policyType === "motor"
+      ? await db
+          .select()
+          .from(motorClaimDetails)
+          .where(eq(motorClaimDetails.claimId, claimId))
+          .limit(1)
+      : [];
+
+  const [burglaryDetails] =
+    claim.policyType === "burglary"
+      ? await db
+          .select()
+          .from(burglaryClaimDetails)
+          .where(eq(burglaryClaimDetails.claimId, claimId))
+          .limit(1)
+      : [];
+
+  const lossItems = burglaryDetails
+    ? await db
+        .select({
+          id: burglaryLossItems.id,
+          description: burglaryLossItems.description,
+          purchaseDate: burglaryLossItems.purchaseDate,
+          originalCost: burglaryLossItems.originalCost,
+          replacementValue: burglaryLossItems.replacementValue,
+        })
+        .from(burglaryLossItems)
+        .where(eq(burglaryLossItems.burglaryDetailId, burglaryDetails.id))
+    : [];
+
   return {
     ...claim,
     createdAt: claim.createdAt.toISOString(),
+    motorDetails: motorDetails
+      ? { ...motorDetails, createdAt: motorDetails.createdAt.toISOString() }
+      : null,
+    burglaryDetails: burglaryDetails
+      ? {
+          ...burglaryDetails,
+          lossItems,
+          createdAt: burglaryDetails.createdAt.toISOString(),
+        }
+      : null,
+    attachments: attachments.map((attachment) => ({
+      ...attachment,
+      sizeBytes: attachment.sizeBytes ?? 0,
+      createdAt: attachment.createdAt.toISOString(),
+    })),
   };
 }
 
-// ── Update claim status ────────────────────────────────────────────────
+// â”€â”€ Update claim status â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type ClaimStatus =
   | "pending"
@@ -185,7 +244,7 @@ export async function updateClaimStatus(
   return { success: true };
 }
 
-// ── Add claim note ─────────────────────────────────────────────────────
+// â”€â”€ Add claim note â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function addClaimNote(claimId: string, content: string) {
   const session = await requireSession();
@@ -238,7 +297,7 @@ export async function addClaimNote(claimId: string, content: string) {
   return { success: true };
 }
 
-// ── Get claim timeline ─────────────────────────────────────────────────
+// â”€â”€ Get claim timeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getClaimTimeline(claimId: string) {
 

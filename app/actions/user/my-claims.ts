@@ -8,13 +8,15 @@ import {
   claimNotifications,
   claimNotes,
   claimAttachments,
+  motorClaimDetails,
+  burglaryClaimDetails,
+  burglaryLossItems,
   user,
   organizations,
 } from "@/db/schema";
 import { requireSession } from "@/lib/session";
 import { requirePermission, permissions } from "@/lib/permissions";
-import { eq, and, desc, asc } from "drizzle-orm";
-import { getFileUrl } from "@/lib/storage";
+import { eq, desc, asc } from "drizzle-orm";
 
 // ── Get my policies ────────────────────────────────────────────────────
 
@@ -196,4 +198,48 @@ export async function getMyClaimAttachments(claimId: string) {
     size: a.sizeBytes ?? 0,
     uploadedAt: a.createdAt.toISOString(),
   }));
+}
+export async function deleteMyClaim(claimId: string) {
+  const session = await requireSession();
+
+  const [claim] = await db
+    .select({
+      id: claims.id,
+      status: claims.status,
+      policyId: claims.policyId,
+      policyholderId: policies.userId,
+    })
+    .from(claims)
+    .innerJoin(policies, eq(policies.id, claims.policyId))
+    .where(eq(claims.id, claimId))
+    .limit(1);
+
+  if (!claim) return { success: false, error: "Claim not found" };
+  if (claim.policyholderId !== session.id) {
+    return { success: false, error: "This claim does not belong to you" };
+  }
+  if (["approved", "settled"].includes(claim.status)) {
+    return { success: false, error: "Approved or settled claims cannot be deleted" };
+  }
+
+  const burglaryDetails = await db
+    .select({ id: burglaryClaimDetails.id })
+    .from(burglaryClaimDetails)
+    .where(eq(burglaryClaimDetails.claimId, claim.id));
+
+  for (const detail of burglaryDetails) {
+    await db
+      .delete(burglaryLossItems)
+      .where(eq(burglaryLossItems.burglaryDetailId, detail.id));
+  }
+
+  await db.delete(claimAttachments).where(eq(claimAttachments.claimId, claim.id));
+  await db.delete(claimNotifications).where(eq(claimNotifications.claimId, claim.id));
+  await db.delete(claimNotes).where(eq(claimNotes.claimId, claim.id));
+  await db.delete(claimProgressSteps).where(eq(claimProgressSteps.claimId, claim.id));
+  await db.delete(motorClaimDetails).where(eq(motorClaimDetails.claimId, claim.id));
+  await db.delete(burglaryClaimDetails).where(eq(burglaryClaimDetails.claimId, claim.id));
+  await db.delete(claims).where(eq(claims.id, claim.id));
+
+  return { success: true };
 }

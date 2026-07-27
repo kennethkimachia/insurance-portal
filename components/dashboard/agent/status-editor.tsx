@@ -11,6 +11,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Circle,
   UserCheck,
   FileSearch,
@@ -39,11 +49,7 @@ const STEPS: {
 }[] = [
   { key: "pending", label: "Submitted", icon: Circle },
   { key: "assigned", label: "Assigned", icon: UserCheck },
-  {
-    key: "surveyor_dispatched",
-    label: "Surveyor Dispatched",
-    icon: FileSearch,
-  },
+  { key: "surveyor_dispatched", label: "Surveyor Dispatched", icon: FileSearch },
   { key: "under_review", label: "Under Review", icon: FileSearch },
   { key: "assessment_complete", label: "Assessment Done", icon: ShieldCheck },
   { key: "approved", label: "Approved", icon: ShieldCheck },
@@ -53,6 +59,11 @@ const STEPS: {
 function getStepIndex(status: ClaimStatus): number {
   const idx = STEPS.findIndex((s) => s.key === status);
   return idx >= 0 ? idx : -1;
+}
+
+function getStatusLabel(status: ClaimStatus) {
+  if (status === "rejected") return "Rejected";
+  return STEPS.find((step) => step.key === status)?.label ?? status;
 }
 
 interface StatusEditorProps {
@@ -69,6 +80,9 @@ export function StatusEditor({
   onStatusChange,
 }: StatusEditorProps) {
   const [status, setStatus] = useState(currentStatus);
+  const [pendingStatus, setPendingStatus] = useState<ClaimStatus | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -77,34 +91,45 @@ export function StatusEditor({
   const isRejected = status === "rejected";
 
   function handleChange(newStatus: string) {
-    const s = newStatus as ClaimStatus;
+    const selected = newStatus as ClaimStatus;
+    setError(null);
 
-    if (s === "rejected") {
-      setStatus(s);
-      setError(null);
+    if (selected === "rejected") {
+      setStatus("rejected");
       return;
     }
 
+    if (selected === status) return;
+    setPendingStatus(selected);
+    setConfirmOpen(true);
+  }
+
+  function confirmStatusChange() {
+    if (!pendingStatus) return;
+    const nextStatus = pendingStatus;
+
     if (claimId) {
       startTransition(async () => {
-        const result = await updateClaimStatus(claimId, s);
-        if (result.success) {
-          setStatus(s);
-          const step = STEPS.find((st) => st.key === s);
-          const msg = `Claim ${claimNumber} has been updated to "${step?.label || s}"`;
-          setNotification(msg);
-          onStatusChange?.(s, msg);
-          setTimeout(() => setNotification(null), 4000);
+        const result = await updateClaimStatus(claimId, nextStatus);
+        if (!result.success) {
+          setError(result.error ?? "Unable to update this claim");
+          return;
         }
+        applyStatus(nextStatus);
       });
     } else {
-      setStatus(s);
-      const step = STEPS.find((st) => st.key === s);
-      const msg = `Claim ${claimNumber} has been updated to "${step?.label || s}"`;
-      setNotification(msg);
-      onStatusChange?.(s, msg);
-      setTimeout(() => setNotification(null), 4000);
+      applyStatus(nextStatus);
     }
+  }
+
+  function applyStatus(nextStatus: ClaimStatus) {
+    setStatus(nextStatus);
+    setPendingStatus(null);
+    setConfirmOpen(false);
+    const msg = `Claim ${claimNumber} has been updated to "${getStatusLabel(nextStatus)}"`;
+    setNotification(msg);
+    onStatusChange?.(nextStatus, msg);
+    setTimeout(() => setNotification(null), 4000);
   }
 
   function submitRejection() {
@@ -115,6 +140,8 @@ export function StatusEditor({
         setError(result.error ?? "Unable to reject this claim");
         return;
       }
+      setStatus("rejected");
+      setRejectOpen(false);
       setError(null);
       const msg = `Claim ${claimNumber} was rejected with a reason supplied to the policyholder.`;
       setNotification(msg);
@@ -130,20 +157,16 @@ export function StatusEditor({
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {/* Claim reference */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <span className="text-sm text-muted-foreground">Claim</span>
             <span className="font-mono text-sm font-semibold text-foreground">
               {claimNumber}
             </span>
           </div>
 
-          {/* Status dropdown */}
           <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">
-              Move to stage
-            </label>
-            <Select value={status} onValueChange={handleChange}>
+            <label className="text-sm font-medium text-foreground">Move to stage</label>
+            <Select value={status} onValueChange={handleChange} disabled={isPending}>
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -156,34 +179,28 @@ export function StatusEditor({
                 <SelectItem value="rejected">Rejected</SelectItem>
               </SelectContent>
             </Select>
+            {error && <p className="text-xs text-destructive">{error}</p>}
           </div>
 
-          {/* Visual progress bar */}
           {!isRejected && (
             <>
               <div className="relative mt-2">
                 <div className="h-2.5 w-full rounded-full bg-muted">
                   <div
                     className="h-2.5 rounded-full bg-primary transition-all duration-500 ease-in-out"
-                    style={{
-                      width: `${((currentIndex + 1) / STEPS.length) * 100}%`,
-                    }}
+                    style={{ width: `${((currentIndex + 1) / STEPS.length) * 100}%` }}
                   />
                 </div>
               </div>
 
-              {/* Step indicators */}
-              <div className="grid grid-cols-7 gap-0.5">
+              <div className="grid grid-cols-7 gap-1">
                 {STEPS.map((step, i) => {
                   const isCompleted = i <= currentIndex;
                   const isCurrent = i === currentIndex;
                   const StepIcon = isCompleted ? CheckCircle2 : step.icon;
 
                   return (
-                    <div
-                      key={step.key}
-                      className="flex flex-col items-center text-center"
-                    >
+                    <div key={step.key} className="flex min-w-0 flex-col items-center text-center">
                       <div
                         className={`flex h-7 w-7 items-center justify-center rounded-full transition-all ${
                           isCurrent
@@ -196,7 +213,7 @@ export function StatusEditor({
                         <StepIcon className="h-3.5 w-3.5" />
                       </div>
                       <span
-                        className={`mt-1 text-[10px] leading-tight ${
+                        className={`mt-1 max-w-full text-[10px] leading-tight ${
                           isCurrent
                             ? "font-semibold text-foreground"
                             : isCompleted
@@ -227,31 +244,61 @@ export function StatusEditor({
                 placeholder="Explain why this claim cannot be accepted..."
                 rows={4}
               />
-              {error && <p className="text-xs text-destructive">{error}</p>}
               <Button
                 type="button"
                 variant="destructive"
                 disabled={isPending || rejectionReason.trim().length < 10}
-                onClick={submitRejection}
+                onClick={() => setRejectOpen(true)}
               >
-                {isPending ? "Saving..." : "Confirm rejection"}
+                Reject Claim
               </Button>
             </div>
           )}
 
-          {/* Notification toast */}
           {notification && (
             <div className="animate-in slide-in-from-bottom-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
               <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
-                ✓ Notification created
+                Notification created
               </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {notification}
-              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{notification}</p>
             </div>
           )}
         </div>
       </CardContent>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm status change</AlertDialogTitle>
+            <AlertDialogDescription>
+              Move claim {claimNumber} from {getStatusLabel(status)} to {pendingStatus ? getStatusLabel(pendingStatus) : "the selected stage"}?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmStatusChange} disabled={isPending}>
+              {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={rejectOpen} onOpenChange={setRejectOpen}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reject this claim?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will reject claim {claimNumber} and send the reason to the policyholder.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={submitRejection} disabled={isPending} variant="destructive">
+              {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Reject claim"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

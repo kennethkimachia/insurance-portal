@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { SystemOverview } from "@/components/dashboard/admin/system-overview";
 import { ManageOrganizations } from "@/components/dashboard/admin/manage-organizations";
 import { ManageAgents } from "@/components/dashboard/admin/manage-agents";
@@ -11,7 +13,7 @@ import {
   claims,
   invitations,
 } from "@/db/schema";
-import { eq, sql, desc, and, or } from "drizzle-orm";
+import { eq, sql, desc, or } from "drizzle-orm";
 
 export default async function AdminDashboard() {
   const orgs = await getOrganizations();
@@ -148,7 +150,7 @@ export default async function AdminDashboard() {
         </div>
 
         {/* System Overview */}
-        <SystemOverview stats={stats} />
+        <SystemOverview stats={stats} organizations={orgs.map((org) => ({ id: org.id, agentCount: org.agentCount, claimCount: org.claimCount }))} />
 
         {/* Organizations + Agents */}
         <div className="mt-6 grid gap-6 lg:grid-cols-2">

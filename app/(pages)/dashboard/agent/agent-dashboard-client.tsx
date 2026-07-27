@@ -5,8 +5,9 @@ import { StatusEditor } from "@/components/dashboard/agent/status-editor";
 import { OnboardPolicyholder } from "@/components/dashboard/agent/onboard-policyholder";
 import { ClaimTimeline } from "@/components/dashboard/agent/claim-timeline";
 import { ProgressEditor } from "@/components/dashboard/agent/progress-editor";
+import { ClaimAssessment } from "@/components/dashboard/agent/claim-assessment";
 import { useState, useTransition, useCallback } from "react";
-import { getClaimTimeline } from "@/app/actions/agent/manage-claims";
+import { getClaimTimeline, getClaimDetails } from "@/app/actions/agent/manage-claims";
 import { getProgressSteps } from "@/app/actions/agent/progress-steps";
 import { useOrg } from "@/lib/org-context";
 
@@ -39,6 +40,8 @@ interface TimelineEntry {
   createdAt: string;
 }
 
+type ClaimDetails = Awaited<ReturnType<typeof getClaimDetails>>;
+
 interface ProgressStep {
   id: string;
   claimId: string;
@@ -56,6 +59,7 @@ interface AgentDashboardClientProps {
   agentName: string;
   initialTimeline: TimelineEntry[];
   initialProgressSteps: ProgressStep[];
+  initialClaimDetails: ClaimDetails;
 }
 
 export function AgentDashboardClient({
@@ -63,14 +67,17 @@ export function AgentDashboardClient({
   agentName,
   initialTimeline,
   initialProgressSteps,
+  initialClaimDetails,
 }: AgentDashboardClientProps) {
   const { currentOrg } = useOrg();
+  const [assignedClaims, setAssignedClaims] = useState(claims);
   const [selectedClaimId, setSelectedClaimId] = useState(claims[0]?.id ?? "");
   const [timeline, setTimeline] = useState<TimelineEntry[]>(initialTimeline);
   const [progressSteps, setProgressSteps] = useState<ProgressStep[]>(initialProgressSteps);
-  const [isPending, startTransition] = useTransition();
+  const [claimDetails, setClaimDetails] = useState<ClaimDetails>(initialClaimDetails);
+  const [, startTransition] = useTransition();
 
-  const filteredClaims = claims.filter(
+  const filteredClaims = assignedClaims.filter(
     (c) => !currentOrg || c.organizationName === currentOrg.name
   );
 
@@ -83,16 +90,27 @@ export function AgentDashboardClient({
     (claim: { id: string }) => {
       setSelectedClaimId(claim.id);
       startTransition(async () => {
-        const [newTimeline, newSteps] = await Promise.all([
+        const [newTimeline, newSteps, newDetails] = await Promise.all([
           getClaimTimeline(claim.id),
           getProgressSteps(claim.id),
+          getClaimDetails(claim.id),
         ]);
         setTimeline(newTimeline);
         setProgressSteps(newSteps);
+        setClaimDetails(newDetails);
       });
     },
     []
   );
+
+  function handleStatusChange(newStatus: ClaimStatus) {
+    setAssignedClaims((prev) =>
+      prev.map((claim) =>
+        claim.id === selectedClaimId ? { ...claim, status: newStatus } : claim
+      )
+    );
+    setClaimDetails((prev) => (prev ? { ...prev, status: newStatus } : prev));
+  }
 
   if (filteredClaims.length === 0) {
     return (
@@ -153,9 +171,9 @@ export function AgentDashboardClient({
         </div>
 
         {/* Main grid */}
-        <div className="grid gap-6 lg:grid-cols-5">
+        <div className="grid items-start gap-6 xl:grid-cols-12">
           {/* Left: My Queue */}
-          <div className="lg:col-span-2">
+          <div className="min-w-0 xl:col-span-4">
             <MyQueue
               claims={filteredClaims.map((c) => ({
                 id: c.id,
@@ -172,22 +190,27 @@ export function AgentDashboardClient({
           </div>
 
           {/* Right: Status Editor + Progress + Timeline */}
-          <div className="space-y-6 lg:col-span-3">
+          <div className="min-w-0 space-y-6 xl:col-span-8">
             {selectedClaim && (
               <>
-                <StatusEditor
-                  claimNumber={selectedClaim.claimNumber}
-                  currentStatus={selectedClaim.status as ClaimStatus}
-                  claimId={selectedClaim.id}
-                  key={`status-${selectedClaim.id}`}
-                />
+                <ClaimAssessment details={claimDetails} />
 
-                <ProgressEditor
+                <div className="grid items-start gap-6 lg:grid-cols-2">
+                  <StatusEditor
+                    claimNumber={selectedClaim.claimNumber}
+                    currentStatus={selectedClaim.status as ClaimStatus}
+                    claimId={selectedClaim.id}
+                    onStatusChange={handleStatusChange}
+                    key={`status-${selectedClaim.id}`}
+                  />
+
+                  <ProgressEditor
                   claimId={selectedClaim.id}
                   claimNumber={selectedClaim.claimNumber}
                   initialSteps={progressSteps}
-                  key={`progress-${selectedClaim.id}`}
-                />
+                    key={`progress-${selectedClaim.id}`}
+                  />
+                </div>
 
                 <ClaimTimeline
                   claimNumber={selectedClaim.claimNumber}

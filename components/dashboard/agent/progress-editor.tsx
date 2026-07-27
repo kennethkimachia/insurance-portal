@@ -11,13 +11,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  CheckCircle2,
-  Circle,
-  Plus,
-  Trash2,
-  GripVertical,
-  Loader2,
-} from "lucide-react";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { CheckCircle2, Circle, Plus, Trash2, Loader2, RotateCcw } from "lucide-react";
 import { useState, useTransition } from "react";
 import {
   addProgressStep,
@@ -44,53 +48,49 @@ interface ProgressEditorProps {
   initialSteps: ProgressStep[];
 }
 
-export function ProgressEditor({
-  claimId,
-  claimNumber,
-  initialSteps,
-}: ProgressEditorProps) {
+export function ProgressEditor({ claimId, claimNumber, initialSteps }: ProgressEditorProps) {
   const [steps, setSteps] = useState<ProgressStep[]>(initialSteps);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newLabel, setNewLabel] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [isPending, startTransition] = useTransition();
   const [actionStepId, setActionStepId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const completedCount = steps.filter((s) => s.isCompleted).length;
-  const progress =
-    steps.length > 0 ? (completedCount / steps.length) * 100 : 0;
+  const progress = steps.length > 0 ? (completedCount / steps.length) * 100 : 0;
 
   function handleAddStep() {
     if (!newLabel.trim()) return;
 
     startTransition(async () => {
-      const result = await addProgressStep(
-        claimId,
-        newLabel,
-        newDescription || undefined
-      );
+      const result = await addProgressStep(claimId, newLabel, newDescription || undefined);
       if (result.success && result.step) {
         setSteps((prev) => [...prev, result.step as ProgressStep]);
         setNewLabel("");
         setNewDescription("");
         setShowAddForm(false);
+        setError(null);
+      } else {
+        setError(result.error ?? "Unable to add progress step");
       }
     });
   }
 
   function handleToggleStep(stepId: string, isCurrentlyCompleted: boolean) {
     setActionStepId(stepId);
+    setError(null);
     startTransition(async () => {
       if (isCurrentlyCompleted) {
         const result = await uncompleteProgressStep(stepId);
         if (result.success) {
           setSteps((prev) =>
             prev.map((s) =>
-              s.id === stepId
-                ? { ...s, isCompleted: false, completedAt: null, completedBy: null }
-                : s
+              s.id === stepId ? { ...s, isCompleted: false, completedAt: null, completedBy: null } : s
             )
           );
+        } else {
+          setError(result.error ?? "Unable to revert this step");
         }
       } else {
         const result = await completeProgressStep(stepId);
@@ -98,14 +98,12 @@ export function ProgressEditor({
           setSteps((prev) =>
             prev.map((s) =>
               s.id === stepId
-                ? {
-                    ...s,
-                    isCompleted: true,
-                    completedAt: new Date().toISOString(),
-                  }
+                ? { ...s, isCompleted: true, completedAt: new Date().toISOString() }
                 : s
             )
           );
+        } else {
+          setError(result.error ?? "Unable to complete this step");
         }
       }
       setActionStepId(null);
@@ -114,10 +112,13 @@ export function ProgressEditor({
 
   function handleRemoveStep(stepId: string) {
     setActionStepId(stepId);
+    setError(null);
     startTransition(async () => {
       const result = await removeProgressStep(stepId);
       if (result.success) {
         setSteps((prev) => prev.filter((s) => s.id !== stepId));
+      } else {
+        setError(result.error ?? "Unable to remove this step");
       }
       setActionStepId(null);
     });
@@ -126,17 +127,17 @@ export function ProgressEditor({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <CardTitle className="text-lg">Claim Progress</CardTitle>
             <CardDescription>
-              {claimNumber} · {completedCount} of {steps.length} steps complete
+              {claimNumber} - {completedCount} of {steps.length} steps complete
             </CardDescription>
           </div>
           <Button
             variant="outline"
             size="sm"
-            className="gap-1.5"
+            className="gap-1.5 self-start"
             onClick={() => setShowAddForm(!showAddForm)}
           >
             <Plus className="h-3.5 w-3.5" />
@@ -145,7 +146,6 @@ export function ProgressEditor({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Progress bar */}
         <div className="relative">
           <div className="h-2.5 w-full rounded-full bg-muted">
             <div
@@ -158,8 +158,13 @@ export function ProgressEditor({
           </span>
         </div>
 
-        {/* Steps */}
-        <div className="space-y-1">
+        {error && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            {error}
+          </div>
+        )}
+
+        <div className="space-y-2">
           {steps.map((step, index) => (
             <div
               key={step.id}
@@ -169,35 +174,63 @@ export function ProgressEditor({
                   : "border-border hover:border-primary/30 hover:bg-primary/5"
               }`}
             >
-              {/* Step indicator line */}
               <div className="flex flex-col items-center pt-0.5">
-                <button
-                  onClick={() => handleToggleStep(step.id, step.isCompleted)}
-                  disabled={isPending && actionStepId === step.id}
-                  className="shrink-0 transition-transform hover:scale-110 disabled:opacity-50"
-                >
-                  {isPending && actionStepId === step.id ? (
-                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                  ) : step.isCompleted ? (
-                    <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                  ) : (
-                    <Circle className="h-5 w-5 text-muted-foreground" />
-                  )}
-                </button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <button
+                      type="button"
+                      disabled={isPending && actionStepId === step.id}
+                      className="shrink-0 rounded-full transition-transform hover:scale-110 disabled:opacity-50"
+                      aria-label={step.isCompleted ? "Revert progress step" : "Complete progress step"}
+                    >
+                      {isPending && actionStepId === step.id ? (
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      ) : step.isCompleted ? (
+                        <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                      ) : (
+                        <Circle className="h-5 w-5 text-muted-foreground" />
+                      )}
+                    </button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent size="sm">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        {step.isCompleted ? "Revert this step?" : "Complete this step?"}
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {step.isCompleted
+                          ? `Move "${step.label}" back to incomplete for claim ${claimNumber}.`
+                          : `Mark "${step.label}" complete for claim ${claimNumber}.`}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => handleToggleStep(step.id, step.isCompleted)}
+                        disabled={isPending}
+                      >
+                        {step.isCompleted ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <RotateCcw className="h-3.5 w-3.5" /> Revert
+                          </span>
+                        ) : (
+                          "Complete"
+                        )}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
                 {index < steps.length - 1 && (
                   <div
-                    className={`mt-1 w-px flex-1 ${
-                      step.isCompleted ? "bg-emerald-500/30" : "bg-border"
-                    }`}
+                    className={`mt-1 w-px flex-1 ${step.isCompleted ? "bg-emerald-500/30" : "bg-border"}`}
                     style={{ minHeight: "12px" }}
                   />
                 )}
               </div>
 
-              {/* Step content */}
               <div className="min-w-0 flex-1">
                 <p
-                  className={`text-sm font-medium ${
+                  className={`break-words text-sm font-medium ${
                     step.isCompleted
                       ? "text-emerald-700 dark:text-emerald-400"
                       : "text-foreground"
@@ -206,14 +239,13 @@ export function ProgressEditor({
                   {step.label}
                 </p>
                 {step.description && (
-                  <p className="mt-0.5 text-xs text-muted-foreground">
+                  <p className="mt-0.5 break-words text-xs text-muted-foreground">
                     {step.description}
                   </p>
                 )}
                 {step.isCompleted && step.completedAt && (
                   <p className="mt-1 text-[10px] text-emerald-600/70 dark:text-emerald-400/70">
-                    Completed{" "}
-                    {new Date(step.completedAt).toLocaleDateString("en-KE", {
+                    Completed {new Date(step.completedAt).toLocaleDateString("en-KE", {
                       day: "numeric",
                       month: "short",
                       year: "numeric",
@@ -224,27 +256,46 @@ export function ProgressEditor({
                 )}
               </div>
 
-              {/* Remove button (only for incomplete steps) */}
               {!step.isCompleted && (
-                <button
-                  onClick={() => handleRemoveStep(step.id)}
-                  disabled={isPending && actionStepId === step.id}
-                  className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 disabled:opacity-50"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <button
+                      type="button"
+                      disabled={isPending && actionStepId === step.id}
+                      className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 disabled:opacity-50"
+                      aria-label="Remove progress step"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent size="sm">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Remove this step?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Remove {step.label} from claim {claimNumber}.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => handleRemoveStep(step.id)}
+                        disabled={isPending}
+                        variant="destructive"
+                      >
+                        Remove
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               )}
             </div>
           ))}
         </div>
 
-        {/* Add step form */}
         {showAddForm && (
           <div className="animate-in slide-in-from-top-2 space-y-3 rounded-lg border border-dashed border-primary/30 bg-primary/5 p-4">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">
-                Step Label
-              </label>
+              <label className="text-sm font-medium text-foreground">Step Label</label>
               <Input
                 placeholder="e.g. Surveyor assessment scheduled"
                 value={newLabel}
@@ -253,8 +304,7 @@ export function ProgressEditor({
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground">
-                Description{" "}
-                <span className="text-muted-foreground">(optional)</span>
+                Description <span className="text-muted-foreground">(optional)</span>
               </label>
               <Textarea
                 placeholder="Additional details about this step..."
@@ -264,17 +314,8 @@ export function ProgressEditor({
               />
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                onClick={handleAddStep}
-                disabled={!newLabel.trim() || isPending}
-                className="gap-1.5"
-              >
-                {isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Plus className="h-3.5 w-3.5" />
-                )}
+              <Button size="sm" onClick={handleAddStep} disabled={!newLabel.trim() || isPending} className="gap-1.5">
+                {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
                 Add Step
               </Button>
               <Button
@@ -295,8 +336,7 @@ export function ProgressEditor({
         {steps.length === 0 && !showAddForm && (
           <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center">
             <p className="text-sm text-muted-foreground">
-              No progress steps yet. Add steps to track this claim&apos;s journey
-              through the insurance carrier&apos;s process.
+              No progress steps yet. Add steps to track this claim through the insurance carrier process.
             </p>
           </div>
         )}

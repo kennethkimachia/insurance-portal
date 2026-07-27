@@ -1,4 +1,4 @@
-import { getMyAssignedClaims, getClaimTimeline } from "@/app/actions/agent/manage-claims";
+import { getMyAssignedClaims, getClaimTimeline, getClaimDetails } from "@/app/actions/agent/manage-claims";
 import { getProgressSteps } from "@/app/actions/agent/progress-steps";
 import { getSessionUser } from "@/lib/session";
 import { redirect } from "next/navigation";
@@ -16,11 +16,13 @@ export default async function AgentDashboard() {
   // If there are claims, fetch timeline and progress for the first one
   let initialTimeline: Awaited<ReturnType<typeof getClaimTimeline>> = [];
   let initialProgressSteps: Awaited<ReturnType<typeof getProgressSteps>> = [];
+  let initialClaimDetails: Awaited<ReturnType<typeof getClaimDetails>> = null;
 
   if (claims.length > 0) {
-    [initialTimeline, initialProgressSteps] = await Promise.all([
+    [initialTimeline, initialProgressSteps, initialClaimDetails] = await Promise.all([
       getClaimTimeline(claims[0].id),
       getProgressSteps(claims[0].id),
+      getClaimDetails(claims[0].id),
     ]);
   }
 
@@ -30,6 +32,7 @@ export default async function AgentDashboard() {
       agentName={session.name}
       initialTimeline={initialTimeline}
       initialProgressSteps={initialProgressSteps}
+      initialClaimDetails={initialClaimDetails}
     />
   );
 }
