@@ -69,18 +69,19 @@ export async function acceptInvitation(token: string) {
       return { success: false, error: "This invitation was issued to a different email address." };
     }
 
-    await db.transaction(async (tx) => {
-      await tx.update(user)
-        .set({ role: invitation.role, organizationId: invitation.organizationId })
-        .where(eq(user.id, session.id));
-      if (invitation.role === "agent" || invitation.role === "head_agent") {
-        await tx.insert(agentOrganizations)
-          .values({ agentId: session.id, organizationId: invitation.organizationId })
-          .onConflictDoNothing();
-      }
-      await tx.update(invitations).set({ status: "accepted" })
-        .where(eq(invitations.id, invitation.id));
-    });
+    // Run sequentially instead of in a transaction because neon-http
+    // does not support interactive transactions.
+    await db.update(user)
+      .set({ role: invitation.role, organizationId: invitation.organizationId })
+      .where(eq(user.id, session.id));
+    if (invitation.role === "agent" || invitation.role === "head_agent") {
+      await db.insert(agentOrganizations)
+        .values({ agentId: session.id, organizationId: invitation.organizationId })
+        .onConflictDoNothing();
+    }
+    await db.update(invitations).set({ status: "accepted" })
+      .where(eq(invitations.id, invitation.id));
+
     return { success: true };
   } catch (error) {
     console.error("Accept invitation error:", error);
@@ -128,24 +129,24 @@ export async function acceptInvitationByToken(token: string, email: string) {
       return { success: false, error: "No account found for this email. Please sign up first." };
     }
 
-    await db.transaction(async (tx) => {
-      await tx
-        .update(user)
-        .set({ role: invitation.role, organizationId: invitation.organizationId })
-        .where(eq(user.id, invitedUser.id));
+    // Run sequentially instead of in a transaction because neon-http
+    // does not support interactive transactions.
+    await db
+      .update(user)
+      .set({ role: invitation.role, organizationId: invitation.organizationId })
+      .where(eq(user.id, invitedUser.id));
 
-      if (invitation.role === "agent" || invitation.role === "head_agent") {
-        await tx
-          .insert(agentOrganizations)
-          .values({ agentId: invitedUser.id, organizationId: invitation.organizationId })
-          .onConflictDoNothing();
-      }
+    if (invitation.role === "agent" || invitation.role === "head_agent") {
+      await db
+        .insert(agentOrganizations)
+        .values({ agentId: invitedUser.id, organizationId: invitation.organizationId })
+        .onConflictDoNothing();
+    }
 
-      await tx
-        .update(invitations)
-        .set({ status: "accepted" })
-        .where(eq(invitations.id, invitation.id));
-    });
+    await db
+      .update(invitations)
+      .set({ status: "accepted" })
+      .where(eq(invitations.id, invitation.id));
 
     return { success: true };
   } catch (error) {
