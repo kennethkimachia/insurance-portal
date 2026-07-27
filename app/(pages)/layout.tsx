@@ -23,7 +23,7 @@ export default async function DashboardLayout({
   // accept it now (catches cases where sign-up invitation acceptance failed)
   if (sessionUser.role === "user") {
     const [pendingInvitation] = await db
-      .select({ token: invitations.token })
+      .select({ token: invitations.token, role: invitations.role })
       .from(invitations)
       .where(
         and(
@@ -39,8 +39,17 @@ export default async function DashboardLayout({
         sessionUser.email
       );
       if (result.success) {
-        // Redirect to refresh the session with updated role/org
-        redirect(ROUTES.DASHBOARD);
+        // Redirect to the specific role-based dashboard to avoid
+        // re-entering this layout with a stale session that still shows role "user"
+        const roleDashboard: Record<string, string> = {
+          admin: ROUTES.DASHBOARD_ADMIN,
+          head_agent: ROUTES.DASHBOARD_HEAD_AGENT,
+          agent: ROUTES.DASHBOARD_AGENT,
+          user: ROUTES.DASHBOARD_USER,
+        };
+        const targetDashboard =
+          roleDashboard[pendingInvitation.role] || ROUTES.DASHBOARD_USER;
+        redirect(targetDashboard);
       }
     }
   }

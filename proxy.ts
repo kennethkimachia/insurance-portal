@@ -7,6 +7,8 @@ const PUBLIC_ROUTES = [
   ROUTES.SIGNUP,
   ROUTES.FORGOT_PASSWORD,
   ROUTES.RESET_PASSWORD,
+  ROUTES.VERIFY_EMAIL,
+  ROUTES.LOGOUT,
   ROUTES.API_ROUTES,
   "api/auth/[...all]",
 ];
@@ -54,7 +56,9 @@ export async function proxy(request: NextRequest) {
     }
 
     if (!sessionData || !sessionData.user) {
-      const res = NextResponse.redirect(new URL(ROUTES.SIGNIN, request.url));
+      // Stale cookie — clear it and let the current page render normally.
+      // Do NOT redirect to /sign-in if we're already on an auth route — that causes a loop.
+      const res = NextResponse.next();
       res.cookies.delete("better-auth.session_token");
       res.cookies.delete("__Secure-better-auth.session_token");
       return res;

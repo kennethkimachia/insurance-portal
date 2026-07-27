@@ -209,7 +209,9 @@ function SignUpContent() {
                             toast.error(result.error ?? "Invitation could not be accepted");
                           }
                         }
-                        router.push("/dashboard");
+                        // Use full page reload instead of client-side navigation
+                        // to ensure the session cookie is fully established
+                        window.location.href = "/dashboard";
                       },
                     },
                   });
