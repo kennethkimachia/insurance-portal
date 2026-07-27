@@ -8,10 +8,6 @@ import { claims, policies } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { requireOrganizationAccess } from "@/lib/organization-access";
 
-// Allow uploads up to 50 MB (Next.js defaults to 1 MB)
-export const config = {
-  api: { bodyParser: false },
-};
 
 
 const ALLOWED_TYPES = new Set([

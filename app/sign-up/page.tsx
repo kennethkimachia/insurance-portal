@@ -1,18 +1,17 @@
 "use client";
 
+import { Suspense, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ModeToggle } from "@/components/mode-toggle";
 import {
   Card,
   CardContent,
   CardDescription,
-
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useState } from "react";
 import Image from "next/image";
 import { Loader2, Shield, X } from "lucide-react";
 import { signUp } from "@/lib/auth-client";
@@ -21,7 +20,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { acceptInvitationByToken } from "@/app/actions/admin/manage-agents";
 import Link from "next/link";
 
-export default function SignUp() {
+function SignUpContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const invitationToken = searchParams.get("token");
@@ -243,4 +242,12 @@ async function convertImageToBase64(file: File): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+export default function SignUp() {
+  return (
+    <Suspense fallback={null}>
+      <SignUpContent />
+    </Suspense>
+  );
 }
