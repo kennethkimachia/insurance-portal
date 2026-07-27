@@ -36,13 +36,15 @@ async function main() {
   const { config } = await import("dotenv");
   config();
 
-  const { drizzle } = await import("drizzle-orm/node-postgres");
+  const { neon } = await import("@neondatabase/serverless");
+  const { drizzle } = await import("drizzle-orm/neon-http");
   const { eq } = await import("drizzle-orm");
   const { user, account } = await import("../db/schema/auth");
   const { randomUUID } = await import("crypto");
   const { hashPassword } = await import("better-auth/crypto");
 
-  const db = drizzle(process.env.DATABASE_URL!);
+  const sql = neon(process.env.DATABASE_URL!);
+  const db = drizzle({ client: sql });
 
   const existing = await db
     .select()
