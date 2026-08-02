@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { FileText, Paperclip } from "lucide-react";
 import type { getClaimDetails } from "@/app/actions/agent/manage-claims";
+import { ClaimAttachmentCard } from '@/components/dashboard/agent/claim-attachment-card';
 
 type ClaimDetails = NonNullable<Awaited<ReturnType<typeof getClaimDetails>>>;
 
@@ -147,14 +148,13 @@ export function ClaimAssessment({ details }: ClaimAssessmentProps) {
               No documents were uploaded with this claim.
             </div>
           ) : (
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2">
               {details.attachments.map((attachment) => (
-                <div key={attachment.id} className="rounded-lg border bg-background/70 p-3">
-                  <p className="break-words text-sm font-medium text-foreground">{attachment.originalFilename}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {attachment.contentType} - {Math.round(attachment.sizeBytes / 1024)} KB
-                  </p>
-                </div>
+                <ClaimAttachmentCard
+                  key={attachment.id}
+                  claimId={details.id}
+                  attachment={attachment}
+                />
               ))}
             </div>
           )}

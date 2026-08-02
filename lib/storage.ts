@@ -40,10 +40,19 @@ export async function getUploadUrl(
 /**
  * Generate a presigned URL for downloading / viewing a file.
  */
-export async function getFileUrl(key: string, expiresIn = 3600) {
+export async function getFileUrl(
+  key: string,
+  expiresIn = 3600,
+  response?: {
+    contentType?: string;
+    contentDisposition?: string;
+  },
+) {
   const command = new GetObjectCommand({
     Bucket: BUCKET,
     Key: key,
+    ResponseContentType: response?.contentType,
+    ResponseContentDisposition: response?.contentDisposition,
   });
 
   return getSignedUrl(s3, command, { expiresIn });
