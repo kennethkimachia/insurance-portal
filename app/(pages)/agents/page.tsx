@@ -1,10 +1,11 @@
-﻿import { AgentOrgAssignments } from "@/components/dashboard/admin/agent-org-assignments";
+import { hydrateActors, hydrateAssignments, listPortalStaff } from "@/lib/clerk-directory";
+import { AgentOrgAssignments } from "@/components/dashboard/admin/agent-org-assignments";
 import { db } from "@/db";
-import { agentOrganizations, organizations, user } from "@/db/schema";
+import { agentOrganizations, organizations, portalActors } from "@/db/schema";
 import { getActiveOrganizationId, requireOrganizationAccess } from "@/lib/organization-access";
 import { ROUTES } from "@/lib/routes";
 import { getSessionUser } from "@/lib/session";
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { BriefcaseBusiness, Mail, Shield, UserRoundCheck } from "lucide-react";
@@ -27,45 +28,39 @@ export default async function AgentsPage() {
 
   await requireOrganizationAccess(session, organizationId);
 
-  const roster = await db
+  const rosterRows = await db
     .select({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
+      id: portalActors.id,
       createdAt: agentOrganizations.createdAt,
       activeClaimCount: sql<number>`(
         SELECT COUNT(*)::int
         FROM claims
-        WHERE claims.assigned_agent_id = ${user.id}
+        WHERE claims.assigned_agent_id = ${portalActors.id}
           AND claims.organization_id = ${organizationId}
           AND claims.status NOT IN ('settled', 'rejected')
       )`,
       totalClaimCount: sql<number>`(
         SELECT COUNT(*)::int
         FROM claims
-        WHERE claims.assigned_agent_id = ${user.id}
+        WHERE claims.assigned_agent_id = ${portalActors.id}
           AND claims.organization_id = ${organizationId}
       )`,
     })
-    .from(user)
-    .innerJoin(agentOrganizations, eq(agentOrganizations.agentId, user.id))
+    .from(portalActors)
+    .innerJoin(agentOrganizations, eq(agentOrganizations.agentId, portalActors.id))
     .where(
       and(
         eq(agentOrganizations.organizationId, organizationId),
-        or(eq(user.role, "agent"), eq(user.role, "head_agent")),
       ),
     )
     .orderBy(desc(agentOrganizations.createdAt));
 
+  const roster = (await hydrateActors(rosterRows)).filter((row) => row.role === "agent" || row.role === "head_agent");
+
   const [agentOptions, orgOptions, assignments] =
     session.role === "admin"
       ? await Promise.all([
-          db
-            .select({ id: user.id, name: user.name, email: user.email })
-            .from(user)
-            .where(or(eq(user.role, "agent"), eq(user.role, "head_agent")))
-            .orderBy(desc(user.createdAt)),
+          listPortalStaff().then((rows) => rows.filter((row) => row.role !== "admin" && !row.suspendedAt && !row.pendingRoleOperationId && row.emailVerified && !row.banned)),
           db
             .select({ id: organizations.id, name: organizations.name, code: organizations.code })
             .from(organizations)
@@ -74,15 +69,12 @@ export default async function AgentsPage() {
             .select({
               id: agentOrganizations.id,
               agentId: agentOrganizations.agentId,
-              agentName: user.name,
-              agentEmail: user.email,
               organizationId: agentOrganizations.organizationId,
               organizationName: organizations.name,
               organizationCode: organizations.code,
               createdAt: agentOrganizations.createdAt,
             })
             .from(agentOrganizations)
-            .innerJoin(user, eq(user.id, agentOrganizations.agentId))
             .innerJoin(
               organizations,
               eq(organizations.id, agentOrganizations.organizationId),
@@ -96,8 +88,8 @@ export default async function AgentsPage() {
       title="Agents"
       description="Agents and head agents assigned to the active organization."
     >
-      <div className="overflow-hidden rounded-lg border bg-card">
-        <div className="hidden grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr] gap-4 border-b bg-muted/40 px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted-foreground md:grid">
+      <div className="portal-panel overflow-hidden">
+        <div className="hidden grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr] gap-4 portal-table-head md:grid">
           <span>Agent</span>
           <span>Role</span>
           <span>Claims</span>
@@ -110,7 +102,7 @@ export default async function AgentsPage() {
             roster.map((agent) => (
               <div
                 key={agent.id}
-                className="grid gap-4 px-4 py-4 md:grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr] md:items-center"
+                className="portal-row grid gap-4 px-5 py-5 md:grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr] md:items-center"
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
@@ -160,7 +152,7 @@ export default async function AgentsPage() {
           <AgentOrgAssignments
             agents={agentOptions}
             organizations={orgOptions}
-            assignments={assignments.map((assignment) => ({
+            assignments={(await hydrateAssignments(assignments)).map((assignment) => ({
               ...assignment,
               createdAt: assignment.createdAt.toISOString(),
             }))}
@@ -181,13 +173,13 @@ function PageShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-[calc(100svh-3.5rem)] bg-muted/30">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+    <div className="min-h-[calc(100svh-4rem)] bg-background">
+      <div className="portal-page">
         <div className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+          <h1 className="portal-heading">
             {title}
           </h1>
-          <p className="mt-1 text-muted-foreground">{description}</p>
+          <p className="portal-intro">{description}</p>
         </div>
         {children}
       </div>
@@ -197,7 +189,7 @@ function PageShell({
 
 function EmptyPanel({ message }: { message: string }) {
   return (
-    <div className="rounded-lg border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
+    <div className="portal-empty">
       {message}
     </div>
   );

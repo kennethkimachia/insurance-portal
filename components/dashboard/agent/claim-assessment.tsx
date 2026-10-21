@@ -16,7 +16,7 @@ function FieldRow({ label, value }: { label: string; value?: string | number | n
   if (value === null || value === undefined || value === "") return null;
 
   return (
-    <div className="rounded-lg border bg-background/70 p-3">
+    <div className="rounded-xl border border-border/80 bg-muted/15 p-4">
       <p className="text-[11px] font-medium uppercase text-muted-foreground">{label}</p>
       <p className="mt-1 break-words text-sm text-foreground">{value}</p>
     </div>
@@ -125,7 +125,7 @@ export function ClaimAssessment({ details }: ClaimAssessmentProps) {
                 <p className="text-sm font-medium text-foreground">Loss Items</p>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {burglary.lossItems.map((item) => (
-                    <div key={item.id} className="rounded-lg border bg-background/70 p-3">
+                    <div key={item.id} className="rounded-xl border border-border/80 bg-muted/15 p-4">
                       <p className="text-sm font-medium text-foreground">{item.description}</p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         Purchased {item.purchaseDate} - Original {item.originalCost} - Replacement {item.replacementValue}

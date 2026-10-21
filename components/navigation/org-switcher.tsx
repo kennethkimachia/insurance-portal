@@ -28,7 +28,7 @@ export function OrgSwitcher({
 }: OrgSwitcherProps) {
   return (
     <Select value={current.id} onValueChange={onChange}>
-      <SelectTrigger className="h-8 w-auto gap-1.5 border-dashed text-xs">
+      <SelectTrigger className="w-auto max-w-44 gap-2 bg-muted/35 text-xs shadow-none data-[size=default]:h-9 [&_[data-slot=select-value]]:truncate xl:max-w-36">
         <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
         <SelectValue />
       </SelectTrigger>

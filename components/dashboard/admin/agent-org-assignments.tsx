@@ -81,22 +81,22 @@ export function AgentOrgAssignments({
         return;
       }
 
-    const newAssignment: Assignment = {
-      id: result.assignmentId,
-      agentId: agent.id,
-      agentName: agent.name,
-      agentEmail: agent.email,
-      organizationId: org.id,
-      organizationName: org.name,
-      organizationCode: org.code,
-      createdAt: new Date().toISOString(),
-    };
+      const newAssignment: Assignment = {
+        id: result.assignmentId,
+        agentId: agent.id,
+        agentName: agent.name,
+        agentEmail: agent.email,
+        organizationId: org.id,
+        organizationName: org.name,
+        organizationCode: org.code,
+        createdAt: new Date().toISOString(),
+      };
 
-    setAssignments((prev) => [newAssignment, ...prev]);
-    setSuccessMsg(`${agent.name} → ${org.name}`);
-    setSelectedAgent("");
-    setSelectedOrg("");
-    setTimeout(() => setSuccessMsg(null), 3000);
+      setAssignments((prev) => [newAssignment, ...prev]);
+      setSuccessMsg(`${agent.name} → ${org.name}`);
+      setSelectedAgent("");
+      setSelectedOrg("");
+      setTimeout(() => setSuccessMsg(null), 3000);
     });
   }
 
@@ -133,9 +133,17 @@ export function AgentOrgAssignments({
           <p className="mb-3 text-sm font-medium text-foreground">
             Create New Assignment
           </p>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Before removing a membership, reassign its open claims. Removal
+            revokes the staff member&apos;s existing sessions and records the
+            access change.
+          </p>
           <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
             <Select value={selectedAgent} onValueChange={setSelectedAgent}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger
+                className="w-full"
+                aria-label="Staff member to assign"
+              >
                 <SelectValue placeholder="Select agent..." />
               </SelectTrigger>
               <SelectContent>
@@ -151,7 +159,10 @@ export function AgentOrgAssignments({
             </Select>
 
             <Select value={selectedOrg} onValueChange={setSelectedOrg}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger
+                className="w-full"
+                aria-label="Organization for membership"
+              >
                 <SelectValue placeholder="Select organization..." />
               </SelectTrigger>
               <SelectContent>
@@ -191,7 +202,7 @@ export function AgentOrgAssignments({
 
         {/* Assignment list */}
         {assignments.length === 0 ? (
-          <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center">
+          <div className="portal-empty">
             <p className="text-sm text-muted-foreground">
               No assignments yet. Link an agent to an organization above.
             </p>
@@ -201,7 +212,7 @@ export function AgentOrgAssignments({
             {assignments.map((a) => (
               <div
                 key={a.id}
-                className="flex flex-col gap-2 rounded-lg border bg-background/70 p-3 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-2 rounded-xl border border-border/80 bg-muted/15 p-4 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2">

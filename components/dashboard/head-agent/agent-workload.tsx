@@ -87,7 +87,7 @@ export function AgentWorkload({ agents }: AgentWorkloadProps) {
     <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+          <div className="portal-icon">
             <Briefcase className="h-4 w-4 text-primary" />
           </div>
           <div>
@@ -116,7 +116,7 @@ export function AgentWorkload({ agents }: AgentWorkloadProps) {
         </div>
 
         {/* Agent cards */}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           {sorted.map((agent) => {
             const level = getWorkloadLevel(agent.activeClaimCount);
             const config = levelConfig[level];
@@ -124,7 +124,7 @@ export function AgentWorkload({ agents }: AgentWorkloadProps) {
             return (
               <div
                 key={agent.id}
-                className={`rounded-lg border bg-background/70 p-3 transition-all hover:shadow-sm ${config.bg}`}
+                className={`rounded-xl border border-border/80 bg-muted/15 p-4 transition-all hover:shadow-sm ${config.bg}`}
               >
                 <div className="flex items-center gap-2">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-background">
@@ -146,7 +146,7 @@ export function AgentWorkload({ agents }: AgentWorkloadProps) {
                       {config.label}
                     </span>
                   </div>
-                  <span className="text-lg font-bold text-foreground">
+                  <span className="text-xl font-semibold tabular-nums text-foreground">
                     {agent.activeClaimCount}
                   </span>
                 </div>

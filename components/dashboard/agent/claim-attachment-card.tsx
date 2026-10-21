@@ -32,7 +32,7 @@ export function ClaimAttachmentCard({
       : 'View document';
 
   return (
-    <div className='overflow-hidden rounded-lg border bg-background/70'>
+    <div className='overflow-hidden rounded-xl border bg-muted/15'>
       {isImage && (
         <a
           href={viewUrl}
@@ -51,8 +51,8 @@ export function ClaimAttachmentCard({
           />
         </a>
       )}
-      <div className='flex items-start gap-3 p-3'>
-        <div className='rounded-md bg-primary/10 p-2 text-primary'>
+      <div className='flex items-start gap-3 p-4'>
+        <div className='portal-icon'>
           {isImage ? (
             <ImageIcon className='h-4 w-4' />
           ) : (

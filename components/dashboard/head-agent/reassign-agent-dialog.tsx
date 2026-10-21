@@ -9,7 +9,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { User, ArrowRight } from "lucide-react";
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { Textarea } from "@/components/ui/textarea";
+import { reassignClaim } from "@/app/actions/head-agent/manage-claims";
 
 interface Agent {
   id: string;
@@ -19,6 +22,8 @@ interface Agent {
 
 interface ReassignAgentDialogProps {
   claimNumber: string;
+  claimId: string;
+  currentAgentId: string;
   currentAgentName: string;
   agents: Agent[];
   onReassign?: (newAgentId: string) => void;
@@ -27,6 +32,8 @@ interface ReassignAgentDialogProps {
 
 export function ReassignAgentDialog({
   claimNumber,
+  claimId,
+  currentAgentId,
   currentAgentName,
   agents,
   onReassign,
@@ -34,11 +41,28 @@ export function ReassignAgentDialog({
 }: ReassignAgentDialogProps) {
   const [selected, setSelected] = useState("");
   const [reassigned, setReassigned] = useState(false);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
 
   function handleReassign() {
     if (!selected) return;
-    setReassigned(true);
-    onReassign?.(selected);
+    startTransition(async () => {
+      try {
+        const result = await reassignClaim(claimId, selected, reason);
+        if (!result.success) {
+          setError(result.error ?? "Unable to reassign this claim");
+          return;
+        }
+        setReassigned(true);
+        setError(null);
+        onReassign?.(selected);
+        router.refresh();
+      } catch {
+        setError("Unable to save the reassignment. Please try again.");
+      }
+    });
   }
 
   const selectedAgent = agents.find((a) => a.id === selected);
@@ -95,7 +119,7 @@ export function ReassignAgentDialog({
           </SelectTrigger>
           <SelectContent>
             {agents
-              .filter((a) => a.name !== currentAgentName)
+              .filter((a) => a.id !== currentAgentId)
               .map((agent) => (
                 <SelectItem key={agent.id} value={agent.id}>
                   <div className="flex items-center gap-2">
@@ -111,12 +135,37 @@ export function ReassignAgentDialog({
         </Select>
       </div>
 
+      <div className="mt-4 space-y-2">
+        <label
+          htmlFor={`reassignment-${claimId}`}
+          className="text-sm font-medium"
+        >
+          Reason for reassignment
+        </label>
+        <Textarea
+          id={`reassignment-${claimId}`}
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          maxLength={2000}
+          placeholder="Explain why the claim is moving to another agent."
+        />
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+      </div>
+
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="outline" size="sm" onClick={onClose}>
           Cancel
         </Button>
-        <Button size="sm" disabled={!selected} onClick={handleReassign}>
-          Change Agent
+        <Button
+          size="sm"
+          disabled={!selected || reason.trim().length < 5 || pending}
+          onClick={handleReassign}
+        >
+          {pending ? "Saving…" : "Change Agent"}
         </Button>
       </div>
     </div>

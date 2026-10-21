@@ -1,6 +1,7 @@
 export * from "./enums";
 export * from "./organizations";
-export * from "./auth";
+export * from "./portal-actors";
+export * from "./clerk-role-operations";
 export * from "./agent-organizations";
 export * from "./policies";
 export * from "./claims";
@@ -11,3 +12,5 @@ export * from "./claim-notifications";
 export * from "./motor-claim-details";
 export * from "./burglary-claim-details";
 export * from "./claim-progress-steps";
+export * from "./claim-events";
+export * from "./audit-events";

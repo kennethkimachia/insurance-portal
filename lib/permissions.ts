@@ -13,6 +13,7 @@ export const permissions = {
 
   // Policies
   POLICY_READ: "policy:read",
+  POLICY_UPDATE: "policy:update",
   POLICY_CREATE: "policy:create",
   POLICY_DELETE: "policy:delete",
 
@@ -43,6 +44,7 @@ export const permissions = {
   // Invitations
   USER_INVITE: "user:invite",
   USER_MANAGE: "user:manage",
+  POLICYHOLDER_INVITE: "policyholder:invite",
 } as const;
 
 export type Permission = (typeof permissions)[keyof typeof permissions];
@@ -63,16 +65,17 @@ const ROLE_PERMISSIONS: Record<Permission, Role[]> = {
 
   // Policies
   [permissions.POLICY_READ]: ["admin", "agent", "head_agent", "user"],
+  [permissions.POLICY_UPDATE]: ["admin", "head_agent"],
   [permissions.POLICY_CREATE]: ["admin", "agent", "head_agent"],
   [permissions.POLICY_DELETE]: ["admin"],
 
   // Progress steps
-  [permissions.PROGRESS_CREATE]: ["agent", "head_agent"],
-  [permissions.PROGRESS_UPDATE]: ["agent", "head_agent"],
+  [permissions.PROGRESS_CREATE]: ["admin", "agent", "head_agent"],
+  [permissions.PROGRESS_UPDATE]: ["admin", "agent", "head_agent"],
   [permissions.PROGRESS_READ]: ["admin", "agent", "head_agent", "user"],
 
   // Notes
-  [permissions.NOTE_CREATE]: ["agent", "head_agent"],
+  [permissions.NOTE_CREATE]: ["admin", "agent", "head_agent"],
   [permissions.NOTE_READ]: ["admin", "agent", "head_agent", "user"],
 
   // Customers
@@ -93,6 +96,7 @@ const ROLE_PERMISSIONS: Record<Permission, Role[]> = {
   // Invitations / user management
   [permissions.USER_INVITE]: ["admin"],
   [permissions.USER_MANAGE]: ["admin"],
+  [permissions.POLICYHOLDER_INVITE]: ["admin", "head_agent", "agent"],
 };
 
 /**
@@ -106,7 +110,10 @@ export function hasPermission(role: Role, permission: Permission): boolean {
 /**
  * Require a permission or throw. Useful in server actions.
  */
-export function requirePermission(role: string | undefined, permission: Permission): void {
+export function requirePermission(
+  role: string | undefined,
+  permission: Permission,
+): void {
   if (!role || !hasPermission(role as Role, permission)) {
     throw new Error(`Unauthorized — requires "${permission}" permission`);
   }

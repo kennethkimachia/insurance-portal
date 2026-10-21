@@ -1,12 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import {
   ClaimAttachmentAccessError,
   getAuthorizedClaimAttachment,
-} from '@/lib/claim-attachment-access';
-import { getSessionUser } from '@/lib/session';
-import { getFileUrl } from '@/lib/storage';
+} from "@/lib/claim-attachment-access";
+import { getSessionUser } from "@/lib/session";
+import { getFileUrl } from "@/lib/storage";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 interface RouteContext {
   params: Promise<{
@@ -15,24 +15,23 @@ interface RouteContext {
   }>;
 }
 
-function inlineContentDisposition(filename: string) {
+function attachmentContentDisposition(filename: string) {
   const quote = String.fromCharCode(34);
   const apostrophe = String.fromCharCode(39);
   const fallbackFilename = filename
-    .replace(/[\r\n]/g, '_')
-    .replaceAll(quote, '_');
+    .replace(/[\r\n]/g, "_")
+    .replaceAll(quote, "_");
   const encodedFilename = encodeURIComponent(filename).replace(
     /[!'()*]/g,
-    (character) =>
-      '%' + character.charCodeAt(0).toString(16).toUpperCase(),
+    (character) => "%" + character.charCodeAt(0).toString(16).toUpperCase(),
   );
 
   return (
-    'inline; filename=' +
+    "attachment; filename=" +
     quote +
     fallbackFilename +
     quote +
-    '; filename*=UTF-8' +
+    "; filename*=UTF-8" +
     apostrophe +
     apostrophe +
     encodedFilename
@@ -41,8 +40,8 @@ function inlineContentDisposition(filename: string) {
 
 export async function GET(_request: NextRequest, context: RouteContext) {
   const session = await getSessionUser();
-  if (!session) {
-    return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+  if (!session || !session.emailVerified) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
   const { claimId, attachmentId } = await context.params;
@@ -54,11 +53,13 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       attachmentId,
     );
     const fileUrl = await getFileUrl(attachment.storageKey, 5 * 60, {
-      contentType: attachment.contentType,
-      contentDisposition: inlineContentDisposition(attachment.originalFilename),
+      contentType: "application/octet-stream",
+      contentDisposition: attachmentContentDisposition(
+        attachment.originalFilename,
+      ),
     });
     const response = NextResponse.redirect(fileUrl, 307);
-    response.headers.set('Cache-Control', 'private, no-store');
+    response.headers.set("Cache-Control", "private, no-store");
     return response;
   } catch (error) {
     if (error instanceof ClaimAttachmentAccessError) {
@@ -68,11 +69,14 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       );
     }
 
-    console.error('Could not create attachment view URL', {
+    console.error("Could not create attachment view URL", {
       claimId,
       attachmentId,
       error,
     });
-    return NextResponse.json({ error: 'Attachment unavailable' }, { status: 500 });
+    return NextResponse.json(
+      { error: "Attachment unavailable" },
+      { status: 500 },
+    );
   }
 }

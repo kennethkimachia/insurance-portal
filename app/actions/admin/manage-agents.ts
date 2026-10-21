@@ -1,187 +1,300 @@
 "use server";
+import { getActorProfile } from "@/lib/clerk-directory";
+import { actorAllowsAccess } from "@/lib/clerk-profile-policy";
+import { projectClerkProfile } from "@/lib/clerk-profile-policy";
+import { clerkClient } from "@clerk/nextjs/server";
+import { stageStaffRole, processRoleOperation } from "@/lib/clerk-role-operations";
 
-import { sendEmail } from "@/lib/email";
-import { getInviteEmailHtml } from "@/lib/emailTemplates";
+import { actionError } from "@/lib/action-errors";
+
 import { db } from "@/db";
-import { agentOrganizations, invitations, organizations, user } from "@/db/schema";
+import {
+  agentOrganizations,
+  organizations,
+  portalActors,
+  clerkRoleOperations,
+  claims,
+  auditEvents,
+} from "@/db/schema";
 import { requireSession } from "@/lib/session";
 import { permissions, requirePermission } from "@/lib/permissions";
-import { and, eq } from "drizzle-orm";
-import { randomBytes } from "crypto";
+import { and, eq, notInArray, desc } from "drizzle-orm";
 import { z } from "zod";
+import { createPortalInvitation } from "@/lib/invitations";
+import { revalidatePath } from "next/cache";
+import { requireCurrentActor } from "@/lib/transaction-identity";
 
 const inviteSchema = z.object({
-  email: z.string().email(), role: z.enum(["admin", "head_agent", "agent"]), organizationId: z.string().uuid(),
+  email: z.string().trim().email().max(255),
+  role: z.enum(["admin", "head_agent", "agent"]),
+  organizationId: z.string().uuid(),
 });
-
 export async function inviteAgent(data: z.infer<typeof inviteSchema>) {
   try {
-    const session = await requireSession();
-    requirePermission(session.role, permissions.USER_INVITE);
+    const actor = await requireSession();
+    requirePermission(actor.role, permissions.USER_INVITE);
     const parsed = inviteSchema.safeParse(data);
-    if (!parsed.success) return { success: false, error: "A valid email, role, and organization are required." };
-    const { email, role, organizationId } = parsed.data;
-
-    const [organization] = await db.select({ id: organizations.id, name: organizations.name })
-      .from(organizations).where(eq(organizations.id, organizationId)).limit(1);
-    if (!organization) return { success: false, error: "Organization not found." };
-
-    const [existing] = await db.select({ id: invitations.id }).from(invitations)
-      .where(and(eq(invitations.email, email.toLowerCase()), eq(invitations.organizationId, organizationId), eq(invitations.status, "pending"))).limit(1);
-    if (existing) return { success: false, error: "A pending invitation already exists for this email and organization." };
-
-    const token = randomBytes(32).toString("hex");
-    await db.insert(invitations).values({
-      email: email.toLowerCase(), role, organizationId, invitedBy: session.id, token,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    if (!parsed.success)
+      return {
+        success: false as const,
+        error: "A valid email, staff role, and organization are required.",
+      };
+    const result = await createPortalInvitation({
+      actor,
+      ...parsed.data,
+      purpose: "staff",
     });
-
-    const inviteLink = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/sign-up?token=${token}&email=${encodeURIComponent(email)}`;
-    const roleLabels: Record<string, string> = {
-      admin: "Admin",
-      head_agent: "Head Agent",
-      agent: "Agent",
+    revalidatePath("/dashboard/admin");
+    return result;
+  } catch (error) {
+    return {
+      success: false as const,
+      error: actionError(error, "Could not create the invitation."),
     };
-    const displayRole = roleLabels[role] || "Agent";
-    const html = getInviteEmailHtml(displayRole, inviteLink);
-    const response = await sendEmail({
-      to: email,
-      subject: `Invitation to join ${organization.name} as ${displayRole}`,
-      html,
-    });
-    if (!response.success) return { success: false, error: "Invitation saved, but the email could not be sent." };
-    return { success: true };
-  } catch (error) {
-    console.error("Invite error:", error);
-    return { success: false, error: "Failed to send invitation. Please try again." };
   }
 }
 
-export async function acceptInvitation(token: string) {
+export async function assignAgentToOrganization(
+  agentId: string,
+  organizationId: string,
+) {
   try {
-    const session = await requireSession();
-    const [invitation] = await db.select().from(invitations)
-      .where(and(eq(invitations.token, token), eq(invitations.status, "pending"))).limit(1);
-    if (!invitation || invitation.expiresAt < new Date()) {
-      return { success: false, error: "This invitation is invalid or has expired." };
-    }
-    if (invitation.email.toLowerCase() !== session.email.toLowerCase()) {
-      return { success: false, error: "This invitation was issued to a different email address." };
-    }
-
-    // Run sequentially instead of in a transaction because neon-http
-    // does not support interactive transactions.
-    await db.update(user)
-      .set({ role: invitation.role, organizationId: invitation.organizationId })
-      .where(eq(user.id, session.id));
-    if (invitation.role === "agent" || invitation.role === "head_agent") {
-      await db.insert(agentOrganizations)
-        .values({ agentId: session.id, organizationId: invitation.organizationId })
-        .onConflictDoNothing();
-    }
-    await db.update(invitations).set({ status: "accepted" })
-      .where(eq(invitations.id, invitation.id));
-
-    return { success: true };
-  } catch (error) {
-    console.error("Accept invitation error:", error);
-    return { success: false, error: "Failed to accept invitation. Please try again from the dashboard." };
-  }
-}
-
-/**
- * Accept an invitation using only the token and the email address.
- * This does NOT require an authenticated session, so it can safely be called
- * immediately after sign-up before the session cookie has propagated.
- */
-export async function acceptInvitationByToken(token: string, email: string) {
-  try {
-    if (!token || !email) {
-      return { success: false, error: "Token and email are required." };
-    }
-
-    const normalizedEmail = email.trim().toLowerCase();
-
-    const [invitation] = await db
-      .select()
-      .from(invitations)
-      .where(
-        and(eq(invitations.token, token), eq(invitations.status, "pending"))
+    const actor = await requireSession();
+    requirePermission(actor.role, permissions.AGENT_WRITE);
+    const assignment = await db.transaction(async (tx) => {
+      await requireCurrentActor(tx, actor, [agentId]);
+      const [agent] = await tx
+        .select()
+        .from(portalActors)
+        .where(eq(portalActors.id, agentId))
+        .for("update");
+      const agentProfile = await getActorProfile(agentId);
+      const [organization] = await tx
+        .select({ id: organizations.id })
+        .from(organizations)
+        .where(eq(organizations.id, organizationId))
+        .limit(1);
+      if (
+        !agent ||
+        !["agent", "head_agent"].includes(agentProfile.role ?? "") || !agentProfile.emailVerified || agentProfile.banned ||
+        !actorAllowsAccess(agent, Date.now())
       )
-      .limit(1);
-
-    if (!invitation || invitation.expiresAt < new Date()) {
-      return { success: false, error: "This invitation is invalid or has expired." };
-    }
-
-    if (invitation.email.toLowerCase() !== normalizedEmail) {
-      return { success: false, error: "This invitation was issued to a different email address." };
-    }
-
-    // Find the user who just signed up with this email
-    const [invitedUser] = await db
-      .select({ id: user.id })
-      .from(user)
-      .where(eq(user.email, normalizedEmail))
-      .limit(1);
-
-    if (!invitedUser) {
-      return { success: false, error: "No account found for this email. Please sign up first." };
-    }
-
-    // Run sequentially instead of in a transaction because neon-http
-    // does not support interactive transactions.
-    await db
-      .update(user)
-      .set({ role: invitation.role, organizationId: invitation.organizationId })
-      .where(eq(user.id, invitedUser.id));
-
-    if (invitation.role === "agent" || invitation.role === "head_agent") {
-      await db
+        throw new Error(
+          "Only active agents and claims managers can be assigned.",
+        );
+      if (!organization) throw new Error("Organization not found.");
+      const [created] = await tx
         .insert(agentOrganizations)
-        .values({ agentId: invitedUser.id, organizationId: invitation.organizationId })
-        .onConflictDoNothing();
-    }
-
-    await db
-      .update(invitations)
-      .set({ status: "accepted" })
-      .where(eq(invitations.id, invitation.id));
-
-    return { success: true };
+        .values({ agentId, organizationId })
+        .onConflictDoNothing()
+        .returning({ id: agentOrganizations.id });
+      if (!created)
+        throw new Error(
+          "This staff member already belongs to the organization.",
+        );
+      await tx
+        .insert(auditEvents)
+        .values({
+          actorId: actor.id,
+          targetUserId: agentId,
+          organizationId,
+          action: "membership_added",
+          details: { membershipId: created.id },
+        });
+      return created;
+    });
+    revalidatePath("/dashboard", "layout");
+    return { success: true as const, assignmentId: assignment.id };
   } catch (error) {
-    console.error("Accept invitation by token error:", error);
-    return { success: false, error: "Failed to accept invitation. Please try again from the dashboard." };
+    return {
+      success: false as const,
+      error: actionError(error, "Could not add membership."),
+    };
   }
-}
-
-export async function assignAgentToOrganization(agentId: string, organizationId: string) {
-  const session = await requireSession();
-  requirePermission(session.role, permissions.AGENT_WRITE);
-  const [[agent], [organization]] = await Promise.all([
-    db.select({ id: user.id, role: user.role }).from(user).where(eq(user.id, agentId)).limit(1),
-    db.select({ id: organizations.id }).from(organizations).where(eq(organizations.id, organizationId)).limit(1),
-  ]);
-  if (!agent || !["agent", "head_agent"].includes(agent.role)) {
-    return { success: false, error: "Only agents and head agents can be assigned." };
-  }
-  if (!organization) return { success: false, error: "Organization not found." };
-
-  const [assignment] = await db.insert(agentOrganizations)
-    .values({ agentId, organizationId })
-    .onConflictDoNothing()
-    .returning({ id: agentOrganizations.id });
-  if (!assignment) {
-    return { success: false, error: "This agent is already assigned to the organization." };
-  }
-  return { success: true, assignmentId: assignment.id };
 }
 
 export async function removeAgentFromOrganization(assignmentId: string) {
-  const session = await requireSession();
-  requirePermission(session.role, permissions.AGENT_WRITE);
-  const [assignment] = await db.delete(agentOrganizations)
-    .where(eq(agentOrganizations.id, assignmentId))
-    .returning({ id: agentOrganizations.id });
-  return assignment ? { success: true } : { success: false, error: "Assignment not found." };
+  try {
+    const actor = await requireSession();
+    requirePermission(actor.role, permissions.AGENT_WRITE);
+    await db.transaction(async (tx) => {
+      const [assignment] = await tx
+        .select()
+        .from(agentOrganizations)
+        .where(eq(agentOrganizations.id, assignmentId))
+        .limit(1);
+      if (!assignment) throw new Error("Membership not found.");
+      await requireCurrentActor(tx, actor, [assignment.agentId]);
+      await tx
+        .select({ id: portalActors.id })
+        .from(portalActors)
+        .where(eq(portalActors.id, assignment.agentId))
+        .for("update");
+      const work = await tx
+        .select({ id: claims.id })
+        .from(claims)
+        .where(
+          and(
+            eq(claims.assignedAgentId, assignment.agentId),
+            eq(claims.organizationId, assignment.organizationId),
+            notInArray(claims.status, ["settled", "rejected", "withdrawn"]),
+          ),
+        );
+      if (work.length)
+        throw new Error(
+          `Reassign ${work.length} open claim${work.length === 1 ? "" : "s"} before removing this membership.`,
+        );
+      await tx
+        .delete(agentOrganizations)
+        .where(eq(agentOrganizations.id, assignmentId));
+      await tx.update(portalActors).set({ sessionsValidAfter: new Date() }).where(eq(portalActors.id, assignment.agentId));
+      await tx
+        .insert(auditEvents)
+        .values({
+          actorId: actor.id,
+          targetUserId: assignment.agentId,
+          organizationId: assignment.organizationId,
+          action: "membership_removed",
+          details: { membershipId: assignmentId, sessionsRevoked: true },
+        });
+    });
+    revalidatePath("/dashboard", "layout");
+    return { success: true as const };
+  } catch (error) {
+    return {
+      success: false as const,
+      error: actionError(error, "Could not remove membership."),
+    };
+  }
+}
+
+export async function setStaffSuspension(
+  id: string,
+  suspended: boolean,
+  reason: string,
+) {
+  try {
+    const actor = await requireSession();
+    requirePermission(actor.role, permissions.USER_MANAGE);
+    if (id === actor.id)
+      throw new Error("You cannot suspend your own account.");
+    if (reason.trim().length < 5 || reason.length > 500)
+      throw new Error(
+        "Provide an access-change reason of 5 to 500 characters.",
+      );
+    await db.transaction(async (tx) => {
+      await requireCurrentActor(tx, actor, [id]);
+      const [staff] = await tx
+        .select()
+        .from(portalActors)
+        .where(eq(portalActors.id, id))
+        .for("update");
+      const staffProfile = await getActorProfile(id);
+      if (!staff || !staffProfile.role || staffProfile.role === "user")
+        throw new Error("Staff account not found.");
+      if (!suspended && staff.suspensionReason === "Cancelled Clerk role update: review role before reinstatement.")
+        throw new Error("Use the cancelled-update review controls to reinstate this account.");
+      if (suspended) {
+        const work = await tx
+          .select({ id: claims.id })
+          .from(claims)
+          .where(
+            and(
+              eq(claims.assignedAgentId, id),
+              notInArray(claims.status, ["settled", "rejected", "withdrawn"]),
+            ),
+          );
+        if (work.length)
+          throw new Error(
+            `Reassign ${work.length} open claim${work.length === 1 ? "" : "s"} before suspending this account.`,
+          );
+      }
+      await tx
+        .update(portalActors)
+        .set({
+          suspendedAt: suspended ? new Date() : null,
+          suspensionReason: suspended ? reason.trim() : null,
+          sessionsValidAfter: new Date(),
+        })
+        .where(eq(portalActors.id, id));
+      await tx
+        .insert(auditEvents)
+        .values({
+          actorId: actor.id,
+          targetUserId: id,
+          action: suspended ? "staff_suspended" : "staff_reinstated",
+          details: { reason: reason.trim(), sessionsRevoked: true },
+        });
+    });
+    revalidatePath("/dashboard", "layout");
+    return { success: true as const };
+  } catch (error) {
+    return {
+      success: false as const,
+      error: actionError(error, "Could not change staff access."),
+    };
+  }
+}
+
+export async function revokeStaffSessions(id: string) {
+  try {
+    const actor = await requireSession();
+    requirePermission(actor.role, permissions.USER_MANAGE);
+    const staff = await getActorProfile(id);
+    if (!staff.role || staff.role === "user") throw new Error("Staff account not found.");
+    await db.transaction(async (tx) => {
+      await requireCurrentActor(tx, actor, [id]);
+      await tx.update(portalActors).set({ sessionsValidAfter: new Date() }).where(eq(portalActors.id, id));
+      await tx
+        .insert(auditEvents)
+        .values({
+          actorId: actor.id,
+          targetUserId: id,
+          action: "staff_sessions_revoked",
+          details: {},
+        });
+    });
+    revalidatePath("/dashboard/admin");
+    return { success: true as const };
+  } catch (error) {
+    return {
+      success: false as const,
+      error: actionError(error, "Could not revoke sessions."),
+    };
+  }
+}
+
+export async function changeStaffRole(id: string, role: "admin" | "head_agent" | "agent") {
+  try {
+    const actor = await requireSession();
+    const desiredRole = z.enum(["admin", "head_agent", "agent"]).parse(role);
+    const operationId = await stageStaffRole(actor, z.string().uuid().parse(id), desiredRole);
+    const result = await processRoleOperation(operationId);
+    revalidatePath("/dashboard", "layout");
+    return result;
+  } catch (error) { return { success: false as const, error: actionError(error) }; }
+}
+
+export async function reinstateCancelledRoleAccount(id: string, reason: string) {
+  try {
+    const actor = await requireSession();
+    requirePermission(actor.role, permissions.USER_MANAGE);
+    z.string().uuid().parse(id);
+    if (reason.trim().length < 5 || reason.length > 500) throw new Error("Record why the restored Clerk role is safe to reinstate (5 to 500 characters).");
+    await db.transaction(async (tx) => {
+      await requireCurrentActor(tx, actor, [id]);
+      const [target] = await tx.select().from(portalActors).where(eq(portalActors.id, id));
+      const [operation] = await tx.select().from(clerkRoleOperations).where(and(eq(clerkRoleOperations.actorId, id), eq(clerkRoleOperations.status, "cancelled"))).orderBy(desc(clerkRoleOperations.completedAt)).limit(1);
+      if (!target?.clerkUserId || target.pendingRoleOperationId || target.retiredAt || !target.suspendedAt || target.suspensionReason !== "Cancelled Clerk role update: review role before reinstatement." || !operation)
+        throw new Error("This account does not have a cancelled update awaiting review.");
+      const user = await (await clerkClient()).users.getUser(target.clerkUserId);
+      const profile = projectClerkProfile(user);
+      if (profile.banned || !profile.emailVerified || profile.invalidRole || profile.role !== operation.previousRole || user.publicMetadata.portalRoleOperationId != null)
+        throw new Error("Review Clerk metadata: restore the prior role and clear the operation marker before reinstating.");
+      await tx.update(portalActors).set({ suspendedAt: null, suspensionReason: null, sessionsValidAfter: new Date() }).where(eq(portalActors.id, id));
+      await tx.insert(auditEvents).values({ actorId: actor.id, targetUserId: id, action: "cancelled_role_account_reinstated", details: { operationId: operation.id, reason: reason.trim() } });
+    });
+    revalidatePath("/dashboard", "layout");
+    return { success: true as const };
+  } catch (error) { return { success: false as const, error: actionError(error) }; }
 }

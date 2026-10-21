@@ -41,7 +41,7 @@ export function PaymentStatus({ payment }: PaymentStatusProps) {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <CardTitle className="text-lg">Settlement</CardTitle>
           <Badge variant={config.variant} className="gap-1">
             <StatusIcon className="h-3 w-3" />
@@ -53,13 +53,13 @@ export function PaymentStatus({ payment }: PaymentStatusProps) {
         <div className="space-y-3">
           <div>
             <p className="text-xs text-muted-foreground">Expected Amount</p>
-            <p className="text-2xl font-bold tracking-tight text-foreground">
+            <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums text-foreground">
               {formattedAmount}
             </p>
           </div>
 
           {payment.referenceNumber && (
-            <div className="rounded-lg border bg-muted/40 px-3 py-2">
+            <div className="rounded-xl border bg-muted/25 px-4 py-3">
               <p className="text-xs text-muted-foreground">Payment Reference</p>
               <p className="font-mono text-sm font-medium text-foreground">
                 {payment.referenceNumber}

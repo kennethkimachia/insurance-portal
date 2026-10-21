@@ -1,5 +1,5 @@
 "use client";
-
+import Link from "next/link";
 import {
   Card,
   CardHeader,
@@ -8,14 +8,8 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  FileText,
-  Image as ImageIcon,
-  Film,
-  Download,
-  Upload,
-  FolderOpen,
-} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Download, FolderOpen } from "lucide-react";
 
 interface Document {
   id: string;
@@ -23,94 +17,118 @@ interface Document {
   type: string;
   size: number;
   uploadedAt: string;
+  category?: string;
+  uploadState?: string;
+  uploadError?: string | null;
+  scanState?: string;
+  reviewStatus?: string;
+  reviewNote?: string | null;
 }
-
-interface DocumentVaultProps {
+export function DocumentVault({
+  documents,
+  claimId,
+  staff = false,
+  demo = false,
+}: {
   documents: Document[];
-}
-
-function getFileIcon(type: string) {
-  if (type.startsWith("image/")) return ImageIcon;
-  if (type.startsWith("video/")) return Film;
-  return FileText;
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-export function DocumentVault({ documents }: DocumentVaultProps) {
+  claimId: string;
+  staff?: boolean;
+  demo?: boolean;
+}) {
+  const received = documents.filter(
+    (doc) => !doc.uploadState || doc.uploadState === "ready",
+  ).length;
   return (
-    <Card className="h-full">
+    <Card id="documents">
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <FolderOpen className="h-5 w-5 text-primary" />
-              Document Vault
-            </CardTitle>
-            <CardDescription className="mt-0.5">
-              {documents.length} file{documents.length !== 1 ? "s" : ""}{" "}
-              uploaded
-            </CardDescription>
-          </div>
-          <Button size="sm" className="gap-1.5">
-            <Upload className="h-3.5 w-3.5" />
-            Upload
-          </Button>
-        </div>
+        <CardTitle className="flex items-center gap-2">
+          <FolderOpen className="size-5 text-primary" />
+          Documents
+        </CardTitle>
+        <CardDescription>
+          {received} file{received === 1 ? "" : "s"} received. Files remain
+          private and wait for manual inspection.
+        </CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="space-y-2">
-          {documents.map((doc) => {
-            const Icon = getFileIcon(doc.type);
-            const isImage = doc.type.startsWith("image/");
-            const isVideo = doc.type.startsWith("video/");
-
+      <CardContent className="space-y-3">
+        {documents.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No documents yet. Your incident report is still received.
+          </p>
+        ) : (
+          documents.map((doc) => {
+            const ready = !doc.uploadState || doc.uploadState === "ready";
+            const canDownload =
+              ready &&
+              (doc.scanState === "clean" ||
+                (staff && doc.scanState !== "rejected"));
+            const label =
+              doc.reviewStatus === "waived"
+                ? "Waived with a recorded reason"
+                : !ready
+                  ? doc.uploadState === "failed"
+                    ? "Upload failed: select the file again below"
+                    : "Upload in progress"
+                  : doc.reviewStatus === "accepted"
+                    ? "Accepted after manual inspection"
+                    : doc.reviewStatus === "needs_replacement"
+                      ? "Replacement needed"
+                      : "Awaiting manual inspection";
             return (
               <div
                 key={doc.id}
-                className="group flex items-center gap-3 rounded-lg border border-transparent bg-muted/40 px-3 py-2.5 transition-colors hover:border-border hover:bg-muted/70"
+                className="flex flex-wrap items-start justify-between gap-3 rounded-xl border bg-muted/15 p-4"
               >
-                <div
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-                    isImage
-                      ? "bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400"
-                      : isVideo
-                        ? "bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400"
-                        : "bg-primary/10 text-primary"
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                </div>
-
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">
-                    {doc.name}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatFileSize(doc.size)} ·{" "}
+                  <p className="break-all text-sm font-medium">{doc.name}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {doc.category?.replaceAll("_", " ")} ·{" "}
+                    {(doc.size / (1024 * 1024)).toFixed(1)} MB ·{" "}
                     {new Date(doc.uploadedAt).toLocaleDateString("en-KE", {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric",
+                      timeZone: "Africa/Nairobi",
                     })}
                   </p>
+                  <Badge className="mt-2 whitespace-normal" variant="secondary">
+                    {label}
+                  </Badge>
+                  {doc.reviewNote && (
+                    <p className="mt-2 text-sm">{doc.reviewNote}</p>
+                  )}
+                  {doc.uploadState === "failed" &&
+                    doc.reviewStatus !== "waived" && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {doc.uploadError ||
+                          "Your report is saved. Select the same file in its category to retry, or ask your agent about an alternative."}
+                      </p>
+                    )}
                 </div>
-
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="opacity-0 transition-opacity group-hover:opacity-100"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                </Button>
+                {!demo && canDownload ? (
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      href={`/api/claims/${claimId}/attachments/${doc.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <Download />
+                      {staff && doc.scanState !== "clean"
+                        ? "Download for inspection"
+                        : "Download"}
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="outline" disabled>
+                    <Download />
+                    {demo
+                      ? "Demo document"
+                      : !ready
+                        ? "File unavailable"
+                        : "Review pending"}
+                  </Button>
+                )}
               </div>
             );
-          })}
-        </div>
+          })
+        )}
       </CardContent>
     </Card>
   );

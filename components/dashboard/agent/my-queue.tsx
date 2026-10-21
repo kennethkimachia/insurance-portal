@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   Card,
   CardHeader,
@@ -8,18 +9,15 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Clock, User, ChevronDown, ChevronUp } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { useState } from "react";
-
-type ClaimStatus =
-  | "pending"
-  | "assigned"
-  | "surveyor_dispatched"
-  | "under_review"
-  | "assessment_complete"
-  | "approved"
-  | "settled"
-  | "rejected";
+import {
+  statusLabels,
+  claimStatuses,
+  closedClaimStatuses,
+  type ClaimStatus,
+} from "@/lib/claim-workflow";
 
 interface QueueClaim {
   id: string;
@@ -29,170 +27,165 @@ interface QueueClaim {
   status: ClaimStatus;
   description: string;
   createdAt: string;
+  openRequestCount?: number;
+  overdueRequestCount?: number;
 }
-
 interface MyQueueProps {
   claims: QueueClaim[];
   onSelectClaim?: (claim: QueueClaim) => void;
   selectedClaimId?: string;
+  title?: string;
+  description?: string;
 }
-
-const statusLabels: Record<ClaimStatus, string> = {
-  pending: "Pending",
-  assigned: "Assigned",
-  surveyor_dispatched: "Surveyor Dispatched",
-  under_review: "Under Review",
-  assessment_complete: "Assessment Complete",
-  approved: "Approved",
-  settled: "Settled",
-  rejected: "Rejected",
-};
-
-const statusColors: Record<ClaimStatus, string> = {
-  pending: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
-  assigned: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
-  surveyor_dispatched:
-    "bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300",
-  under_review:
-    "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
-  assessment_complete:
-    "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
-  approved:
-    "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300",
-  settled: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
-  rejected: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
-};
 
 export function MyQueue({
   claims,
   onSelectClaim,
   selectedClaimId,
+  title = "My claim queue",
+  description,
 }: MyQueueProps) {
-  const [filter, setFilter] = useState<"all" | "active" | "resolved">("all");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-
-  const filtered = claims.filter((c) => {
-    if (filter === "active")
-      return !["settled", "rejected", "approved"].includes(c.status);
-    if (filter === "resolved")
-      return ["settled", "rejected", "approved"].includes(c.status);
-    return true;
+  const [filter, setFilter] = useState<"all" | "active" | "resolved">("active");
+  const [search, setSearch] = useState("");
+  const [stage, setStage] = useState("all");
+  const [product, setProduct] = useState("all");
+  const query = search.trim().toLowerCase();
+  const filtered = claims.filter((claim) => {
+    const closed = closedClaimStatuses.includes(claim.status);
+    return (
+      (filter === "all" || (filter === "active" ? !closed : closed)) &&
+      (stage === "all" || claim.status === stage) &&
+      (product === "all" || claim.policyType === product) &&
+      (!query ||
+        `${claim.claimNumber} ${claim.policyholderName} ${claim.description}`
+          .toLowerCase()
+          .includes(query))
+    );
   });
-
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-lg">My Queue</CardTitle>
-            <CardDescription>
-              {claims.length} claim{claims.length !== 1 ? "s" : ""} assigned to
-              you
-            </CardDescription>
-          </div>
+        <CardTitle className="text-lg">{title}</CardTitle>
+        <CardDescription>
+          {description ||
+            `${claims.length} assigned claim${claims.length === 1 ? "" : "s"}`}
+        </CardDescription>
+        <Input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search reference or policyholder"
+          aria-label="Search claims"
+        />
+        <div className="flex flex-wrap gap-3 rounded-xl border bg-muted/20 p-3">
+          <select
+            aria-label="Filter by claim stage"
+            className="min-h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
+            value={stage}
+            onChange={(e) => {
+              setStage(e.target.value);
+              setFilter("all");
+            }}
+          >
+            <option value="all">All stages</option>
+            {claimStatuses
+              .filter((status) => status !== "draft")
+              .map((status) => (
+                <option key={status} value={status}>
+                  {statusLabels[status]}
+                </option>
+              ))}
+          </select>
+          <select
+            aria-label="Filter by policy type"
+            className="min-h-9 rounded-md border bg-background px-2 text-sm"
+            value={product}
+            onChange={(e) => setProduct(e.target.value)}
+          >
+            <option value="all">Both policy types</option>
+            <option value="motor">Motor</option>
+            <option value="burglary">Burglary</option>
+          </select>
         </div>
-
-        {/* Filter tabs */}
-        <div className="mt-3 flex gap-1 rounded-lg bg-muted p-0.5">
-          {(["all", "active", "resolved"] as const).map((tab) => (
+        <div className="flex gap-1 rounded-xl bg-muted/70 p-1.5">
+          {(["active", "resolved", "all"] as const).map((tab) => (
             <button
               key={tab}
+              type="button"
+              aria-pressed={filter === tab}
               onClick={() => setFilter(tab)}
-              className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                filter === tab
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
+              className={`flex-1 rounded-lg px-3 py-2 text-xs font-medium transition-colors hover:text-foreground ${filter === tab ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
             >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {tab === "resolved"
+                ? "Closed"
+                : tab === "active"
+                  ? "Active"
+                  : "All"}
             </button>
           ))}
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-3">
         {filtered.length === 0 ? (
-          <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              No claims in this category.
-            </p>
-          </div>
+          <p className="portal-empty">
+            No matching claims.
+          </p>
         ) : (
-          <div className="space-y-2">
-            {filtered.map((claim) => {
-              const isExpanded = expandedId === claim.id;
-              const isSelected = selectedClaimId === claim.id;
-
-              return (
-                <div
-                  key={claim.id}
-                  className={`rounded-lg border bg-background/70 p-3 transition-all cursor-pointer hover:bg-muted/30 ${
-                    isSelected ? "ring-2 ring-primary/50 border-primary/30" : ""
-                  }`}
-                  onClick={() => onSelectClaim?.(claim)}
+          filtered.map((claim) => (
+            <article
+              key={claim.id}
+              className={`space-y-3 rounded-xl border p-4 transition-colors hover:border-primary/30 ${selectedClaimId === claim.id ? "border-primary/50 bg-primary/5 ring-1 ring-primary/30" : "bg-background/70"}`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Link
+                  href={`/claims/${claim.id}`}
+                  className="font-mono text-sm font-semibold underline-offset-4 hover:underline"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm font-semibold text-foreground">
-                        {claim.claimNumber}
-                      </span>
-                      <Badge
-                        variant={
-                          claim.policyType === "motor" ? "default" : "secondary"
-                        }
-                      >
-                        {claim.policyType === "motor" ? "Motor" : "Burglary"}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                          statusColors[claim.status]
-                        }`}
-                      >
-                        {statusLabels[claim.status]}
-                      </span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setExpandedId(isExpanded ? null : claim.id);
-                        }}
-                        className="rounded p-0.5 hover:bg-muted"
-                      >
-                        {isExpanded ? (
-                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  {isExpanded && (
-                    <div className="mt-3 space-y-2 border-t pt-3">
-                      <div className="flex items-center gap-2 text-sm">
-                        <User className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-foreground">
-                          {claim.policyholderName}
-                        </span>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {claim.description}
-                      </p>
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Clock className="h-3 w-3" />
-                        Filed{" "}
-                        {new Date(claim.createdAt).toLocaleDateString("en-KE", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                  {claim.claimNumber}
+                </Link>
+                <Badge variant="secondary">{statusLabels[claim.status]}</Badge>
+              </div>
+              <p className="text-sm font-medium">
+                {claim.policyholderName}{" "}
+                <span className="text-xs capitalize text-muted-foreground">
+                  · {claim.policyType}
+                </span>
+              </p>
+              <p className="line-clamp-2 text-xs text-muted-foreground">
+                {claim.description}
+              </p>
+              {!!claim.openRequestCount && (
+                <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                  {claim.openRequestCount} open information request
+                  {claim.openRequestCount === 1 ? "" : "s"}
+                  {claim.overdueRequestCount
+                    ? ` ? ${claim.overdueRequestCount} overdue`
+                    : ""}
+                </p>
+              )}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <time
+                  className="text-xs text-muted-foreground"
+                  dateTime={claim.createdAt}
+                >
+                  {new Date(claim.createdAt).toLocaleDateString("en-KE")}
+                </time>
+                {onSelectClaim ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onSelectClaim(claim)}
+                    aria-pressed={selectedClaimId === claim.id}
+                  >
+                    Select claim
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="outline" asChild>
+                    <Link href={`/claims/${claim.id}`}>Open claim</Link>
+                  </Button>
+                )}
+              </div>
+            </article>
+          ))
         )}
       </CardContent>
     </Card>

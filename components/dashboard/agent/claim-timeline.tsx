@@ -8,162 +8,175 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, Send, User, Loader2 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Loader2, Send } from "lucide-react";
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { addClaimNote } from "@/app/actions/agent/manage-claims";
+import type { Role } from "@/lib/permissions";
 
-interface TimelineEntry {
+export interface TimelineEntry {
   id: string;
   author: string;
-  role: "agent" | "system" | "user" | "head_agent" | "admin";
+  role: string;
   content: string;
   createdAt: string;
+  visibility?: string;
 }
-
 interface ClaimTimelineProps {
   claimNumber: string;
   entries: TimelineEntry[];
   agentName?: string;
   claimId?: string;
+  role?: Role;
+  readOnly?: boolean;
 }
 
 export function ClaimTimeline({
   claimNumber,
   entries: initialEntries,
-  agentName = "You",
   claimId,
+  role = "agent",
+  readOnly = false,
 }: ClaimTimelineProps) {
+  const router = useRouter();
   const [entries, setEntries] = useState(initialEntries);
   const [message, setMessage] = useState("");
-  const [isPending, startTransition] = useTransition();
-
-  function handlePost() {
-    if (!message.trim()) return;
-
-    const content = message.trim();
-
-    if (claimId) {
-      startTransition(async () => {
-        const result = await addClaimNote(claimId, content);
-        if (result.success) {
-          const newEntry: TimelineEntry = {
-            id: `note-${Date.now()}`,
-            author: agentName,
-            role: "agent",
-            content,
-            createdAt: new Date().toISOString(),
-          };
-          setEntries((prev) => [...prev, newEntry]);
-          setMessage("");
+  const [visibility, setVisibility] = useState<"public" | "internal">("public");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  function post() {
+    if (!claimId || !message.trim()) return;
+    startTransition(async () => {
+      try {
+        const result = await addClaimNote(claimId, message, visibility);
+        if (!result.success || !result.note) {
+          setError(result.error ?? "Unable to post your message");
+          return;
         }
-      });
-    } else {
-      const newEntry: TimelineEntry = {
-        id: `note-${Date.now()}`,
-        author: agentName,
-        role: "agent",
-        content,
-        createdAt: new Date().toISOString(),
-      };
-      setEntries((prev) => [...prev, newEntry]);
-      setMessage("");
-    }
+        setEntries((previous) => [...previous, result.note]);
+        setMessage("");
+        setError(null);
+        router.refresh();
+      } catch {
+        setError("Unable to post your message. Please try again.");
+      }
+    });
   }
-
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handlePost();
-    }
-  }
-
   return (
-    <Card className="flex h-full flex-col">
+    <Card>
       <CardHeader>
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
-            <MessageSquare className="h-4 w-4 text-primary" />
-          </div>
-          <div>
-            <CardTitle className="text-lg">Claim Timeline</CardTitle>
-            <CardDescription>{claimNumber}</CardDescription>
-          </div>
-        </div>
+        <CardTitle className="text-lg">Claim history and messages</CardTitle>
+        <CardDescription>{claimNumber}</CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-1 flex-col">
-        {/* Timeline entries */}
-        <div className="flex-1 space-y-3 overflow-y-auto max-h-72 pr-1">
+      <CardContent className="space-y-4">
+        <div className="max-h-96 space-y-4 overflow-y-auto" aria-live="polite">
           {entries.length === 0 ? (
-            <div className="rounded-lg border border-dashed bg-muted/20 p-4 text-center">
-              <p className="text-sm text-muted-foreground">
-                No updates yet. Add the first note below.
-              </p>
-            </div>
+            <p className="portal-empty">
+              No updates yet.
+            </p>
           ) : (
             entries.map((entry) => (
-              <div key={entry.id} className="flex gap-3">
-                <div className="flex flex-col items-center">
-                  <div
-                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
-                      entry.role === "agent" ? "bg-primary/10" : "bg-muted"
-                    }`}
+              <article key={entry.id} className="border-l-2 border-border pl-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium">{entry.author}</span>
+                  {entry.visibility === "internal" && (
+                    <span className="rounded bg-muted px-2 py-0.5 text-xs">
+                      Staff only
+                    </span>
+                  )}
+                  <time
+                    dateTime={entry.createdAt}
+                    className="text-xs text-muted-foreground"
                   >
-                    <User
-                      className={`h-3.5 w-3.5 ${
-                        entry.role === "agent"
-                          ? "text-primary"
-                          : "text-muted-foreground"
-                      }`}
-                    />
-                  </div>
-                  <div className="mt-1 w-px flex-1 bg-border" />
+                    {new Date(entry.createdAt).toLocaleString("en-KE", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </time>
                 </div>
-                <div className="flex-1 pb-3">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-sm font-semibold text-foreground">
-                      {entry.author}
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      {new Date(entry.createdAt).toLocaleString("en-KE", {
-                        day: "numeric",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                  </div>
-                  <p className="mt-0.5 text-sm text-muted-foreground leading-relaxed">
-                    {entry.content}
-                  </p>
-                </div>
-              </div>
+                <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">
+                  {entry.content}
+                </p>
+              </article>
             ))
           )}
         </div>
-
-        {/* Message input */}
-        <div className="mt-4 flex gap-2 border-t pt-4">
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Type an update for the policyholder..."
-            className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            rows={2}
-          />
-          <Button
-            size="sm"
-            className="self-end"
-            disabled={!message.trim() || isPending}
-            onClick={handlePost}
-          >
-            {isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
+        {claimId && !readOnly && (
+          <div className="space-y-3 border-t pt-4">
+            {role !== "user" && (
+              <>
+                <label
+                  htmlFor={`visibility-${claimId}`}
+                  className="text-sm font-medium"
+                >
+                  Message audience
+                </label>
+                <Select
+                  value={visibility}
+                  onValueChange={(value) =>
+                    setVisibility(value as "public" | "internal")
+                  }
+                  disabled={pending}
+                >
+                  <SelectTrigger id={`visibility-${claimId}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="public">
+                      Policyholder and staff
+                    </SelectItem>
+                    <SelectItem value="internal">Staff only</SelectItem>
+                  </SelectContent>
+                </Select>
+              </>
             )}
-          </Button>
-        </div>
+            <label
+              htmlFor={`message-${claimId}`}
+              className="block text-sm font-medium"
+            >
+              {visibility === "internal" ? "Internal note" : "Message"}
+            </label>
+            <Textarea
+              id={`message-${claimId}`}
+              value={message}
+              maxLength={4000}
+              rows={3}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder={
+                visibility === "internal"
+                  ? "Add a note for staff."
+                  : "Write an update or reply."
+              }
+            />
+            <Button
+              disabled={pending || message.trim().length < 2}
+              onClick={post}
+            >
+              {pending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              Post {visibility === "internal" ? "internal note" : "message"}
+            </Button>
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

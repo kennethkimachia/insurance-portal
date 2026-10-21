@@ -1,10 +1,4 @@
-import {
-  pgTable,
-  uuid,
-  varchar,
-  text,
-  timestamp,
-} from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, text, timestamp } from "drizzle-orm/pg-core";
 import { claims } from "./claims";
 
 export const burglaryClaimDetails = pgTable("burglary_claim_details", {
@@ -17,15 +11,15 @@ export const burglaryClaimDetails = pgTable("burglary_claim_details", {
   // Premises
   premisesLocation: text("premises_location").notNull(),
   buildingType: varchar("building_type", { length: 30 }).notNull(),
-  wasAnyoneHome: varchar("was_anyone_home", { length: 5 }).notNull(), // "yes" | "no"
+  wasAnyoneHome: varchar("was_anyone_home", { length: 10 }).notNull(),
 
   // Entry
   entryMethod: text("entry_method").notNull(),
-  evidenceOfViolence: varchar("evidence_of_violence", { length: 5 }).notNull(), // "yes" | "no"
+  evidenceOfViolence: varchar("evidence_of_violence", { length: 10 }).notNull(),
 
   // Security
-  alarmFitted: varchar("alarm_fitted", { length: 5 }).notNull(), // "yes" | "no"
-  alarmActiveAtTime: varchar("alarm_active_at_time", { length: 5 }).notNull(), // "yes" | "no" | "n_a"
+  alarmFitted: varchar("alarm_fitted", { length: 10 }).notNull(),
+  alarmActiveAtTime: varchar("alarm_active_at_time", { length: 10 }).notNull(),
   securityFirmName: varchar("security_firm_name", { length: 100 }),
   exteriorLockTypes: text("exterior_lock_types").notNull(),
 

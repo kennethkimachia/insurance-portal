@@ -70,15 +70,15 @@ export function SystemOverview({ stats, organizations = [] }: SystemOverviewProp
       {cards.map((card) => {
         const Icon = card.icon;
         return (
-          <Card key={card.key} className="relative overflow-hidden">
-            <CardContent className="py-5">
+          <Card key={card.key} className="relative overflow-hidden border-t-2 border-t-primary/30">
+            <CardContent className="py-0">
               <div className="flex items-center gap-3">
                 <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${card.bg}`}>
                   <Icon className={`h-5 w-5 ${card.color}`} />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">{card.label}</p>
-                  <p className="text-2xl font-bold tracking-tight text-foreground">
+                  <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums text-foreground">
                     {displayStats[card.key]}
                   </p>
                 </div>

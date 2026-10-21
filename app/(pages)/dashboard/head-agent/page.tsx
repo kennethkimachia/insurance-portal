@@ -2,6 +2,7 @@ import {
   getUnassignedClaims,
   getAgentWorkloads,
   getBottleneckMetrics,
+  getManagedClaims,
 } from "@/app/actions/head-agent/manage-claims";
 import { getSessionUser } from "@/lib/session";
 import { redirect } from "next/navigation";
@@ -11,10 +12,7 @@ import { HeadAgentDashboardClient } from "./head-agent-dashboard-client";
 
 export default async function HeadAgentDashboard() {
   const session = await getSessionUser();
-  if (
-    !session ||
-    (session.role !== "head_agent" && session.role !== "admin")
-  ) {
+  if (!session || (session.role !== "head_agent" && session.role !== "admin")) {
     redirect(ROUTES.SIGNIN);
   }
 
@@ -22,9 +20,9 @@ export default async function HeadAgentDashboard() {
 
   if (!orgId) {
     return (
-      <div className="min-h-[calc(100svh-3.5rem)] bg-muted/30">
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+      <div className="min-h-[calc(100svh-4rem)] bg-background">
+        <div className="portal-page">
+          <h1 className="portal-heading">
             Head Agent Dashboard
           </h1>
           <p className="mt-4 text-muted-foreground">
@@ -36,19 +34,22 @@ export default async function HeadAgentDashboard() {
     );
   }
 
-  const [unassignedClaims, agentWorkloads, bottleneckMetrics] =
+  const [unassignedClaims, agentWorkloads, bottleneckMetrics, managedClaims] =
     await Promise.all([
       getUnassignedClaims(orgId),
       getAgentWorkloads(orgId),
       getBottleneckMetrics(orgId),
+      getManagedClaims(orgId),
     ]);
 
   return (
     <HeadAgentDashboardClient
+      key={orgId}
       organizationId={orgId}
       unassignedClaims={unassignedClaims}
       agents={agentWorkloads}
       bottleneckMetrics={bottleneckMetrics}
+      managedClaims={managedClaims}
     />
   );
 }

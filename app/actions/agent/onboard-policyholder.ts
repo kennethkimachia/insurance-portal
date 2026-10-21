@@ -1,149 +1,137 @@
 "use server";
 
-import { db } from "@/db";
-import { user, policies, organizations, agentOrganizations } from "@/db/schema";
+import { actionError } from "@/lib/action-errors";
+
 import { requireSession } from "@/lib/session";
 import { requirePermission, permissions } from "@/lib/permissions";
-import { eq, and, sql } from "drizzle-orm";
+import { requireOrganizationAccess } from "@/lib/organization-access";
+import { createPortalInvitation } from "@/lib/invitations";
+import { normalizedPhone } from "@/lib/invitation-policy";
 import { z } from "zod";
+import { revalidatePath } from "next/cache";
 
-const onboardSchema = z.object({
-  fullName: z.string().min(1, "Full name is required"),
-  email: z.string().email("Valid email is required"),
-  phone: z.string().min(1, "Phone number is required"),
-  policyType: z.enum(["motor", "burglary"]),
-  organizationId: z.string().uuid("Organization ID is required"),
-});
-
-/**
- * Generate a policy number.
- * Format: MOT-{ORG_CODE}-{5-digit} or BRG-{ORG_CODE}-{5-digit}
- */
-function generatePolicyNumber(policyType: "motor" | "burglary", orgCode: string): string {
-  const prefix = policyType === "motor" ? "MOT" : "BRG";
-  const num = Math.floor(10000 + Math.random() * 90000);
-  return `${prefix}-${orgCode}-${num}`;
-}
+const optionalDate = z
+  .string()
+  .trim()
+  .refine(
+    (value) =>
+      !value ||
+      (/^\d{4}-\d{2}-\d{2}$/.test(value) &&
+        !Number.isNaN(Date.parse(value)) &&
+        new Date(value).toISOString().slice(0, 10) === value),
+    "Use a valid date.",
+  );
+const onboardSchema = z
+  .object({
+    fullName: z.string().trim().min(2).max(150),
+    email: z.string().trim().email().max(255),
+    phone: z
+      .string()
+      .transform((value) => normalizedPhone(value))
+      .refine(
+        (value) => value !== null,
+        "Use a valid contact number including the country code.",
+      ),
+    policyType: z.enum(["motor", "burglary"]),
+    organizationId: z.string().uuid(),
+    source: z.enum(["manual", "demo"]),
+    insurerReference: z.string().trim().max(100),
+    coverageStart: optionalDate,
+    coverageEnd: optionalDate,
+    insuredAsset: z.string().trim().min(3).max(500),
+    coverageSummary: z.string().trim().min(5).max(2000),
+  })
+  .superRefine((data, ctx) => {
+    if (
+      data.coverageStart &&
+      data.coverageEnd &&
+      data.coverageEnd < data.coverageStart
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["coverageEnd"],
+        message: "Coverage end must be on or after its start.",
+      });
+    if (
+      data.source === "manual" &&
+      (!data.insurerReference || !data.coverageStart || !data.coverageEnd)
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["insurerReference"],
+        message:
+          "A manual policy requires its insurer reference and coverage dates.",
+      });
+  });
 
 export async function onboardPolicyholder(formData: FormData) {
-  const session = await requireSession();
-  requirePermission(session.role, permissions.POLICY_CREATE);
-
-  const raw = {
-    fullName: formData.get("fullName") as string,
-    email: formData.get("email") as string,
-    phone: formData.get("phone") as string,
-    policyType: formData.get("policyType") as string,
-    organizationId: formData.get("organizationId") as string,
-  };
-
-  const parsed = onboardSchema.safeParse(raw);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: "Validation failed",
-      fieldErrors: parsed.error.flatten().fieldErrors,
-    };
-  }
-
-  const { fullName, email, phone, policyType, organizationId } = parsed.data;
-
-  // Verify the agent belongs to this organization
-  if (session.role !== "admin") {
-    const agentOrg = await db
-      .select({ id: agentOrganizations.id })
-      .from(agentOrganizations)
-      .where(
-        and(
-          eq(agentOrganizations.agentId, session.id),
-          eq(agentOrganizations.organizationId, organizationId)
-        )
-      )
-      .limit(1);
-
-    if (agentOrg.length === 0) {
-      return { success: false, error: "You are not assigned to this organization" };
-    }
-  }
-
-  // Get organization code for policy number
-  const [org] = await db
-    .select({ code: organizations.code })
-    .from(organizations)
-    .where(eq(organizations.id, organizationId))
-    .limit(1);
-
-  if (!org) {
-    return { success: false, error: "Organization not found" };
-  }
-
-  // Find or create user by email
-  const [existingUser] = await db
-    .select({ id: user.id })
-    .from(user)
-    .where(eq(user.email, email))
-    .limit(1);
-
-  let userId: string;
-
-  if (existingUser) {
-    userId = existingUser.id;
-  } else {
-    // Create a new user with role "user"
-    const [newUser] = await db
-      .insert(user)
-      .values({
-        name: fullName,
-        email,
-        role: "user",
-        organizationId,
-      })
-      .returning({ id: user.id });
-    userId = newUser.id;
-  }
-
-  // Check if this user already has a policy of this type
-  const existingPolicy = await db
-    .select({ id: policies.id })
-    .from(policies)
-    .where(and(eq(policies.userId, userId), eq(policies.policyType, policyType)))
-    .limit(1);
-
-  if (existingPolicy.length > 0) {
-    return {
-      success: false,
-      error: `This user already has a ${policyType} policy`,
-    };
-  }
-
-  // Generate a unique policy number
-  let policyNumber = generatePolicyNumber(policyType, org.code);
-
-  // Ensure uniqueness (rare collision)
-  const existing = await db
-    .select({ id: policies.id })
-    .from(policies)
-    .where(eq(policies.policyNumber, policyNumber))
-    .limit(1);
-
-  if (existing.length > 0) {
-    policyNumber = generatePolicyNumber(policyType, org.code);
-  }
-
-  // Insert the policy
-  const [newPolicy] = await db
-    .insert(policies)
-    .values({
-      policyNumber,
+  try {
+    const actor = await requireSession();
+    requirePermission(actor.role, permissions.POLICYHOLDER_INVITE);
+    const parsed = onboardSchema.safeParse(
+      Object.fromEntries(
+        [
+          "fullName",
+          "email",
+          "phone",
+          "policyType",
+          "organizationId",
+          "source",
+          "insurerReference",
+          "coverageStart",
+          "coverageEnd",
+          "insuredAsset",
+          "coverageSummary",
+        ].map((key) => [key, formData.get(key) ?? ""]),
+      ),
+    );
+    if (!parsed.success)
+      return {
+        success: false as const,
+        error: "Check the policyholder and policy details.",
+        fieldErrors: parsed.error.flatten().fieldErrors,
+      };
+    const {
+      fullName,
+      email,
+      phone,
       policyType,
-      userId,
       organizationId,
-    })
-    .returning();
-
-  return {
-    success: true,
-    policyNumber: newPolicy.policyNumber,
-    policyholderName: fullName,
-  };
+      source,
+      insurerReference,
+      coverageStart,
+      coverageEnd,
+      insuredAsset,
+      coverageSummary,
+    } = parsed.data;
+    await requireOrganizationAccess(actor, organizationId);
+    const result = await createPortalInvitation({
+      actor,
+      email,
+      role: "user",
+      purpose: "policyholder",
+      organizationId,
+      enrollmentName: fullName,
+      enrollmentPhone: phone!,
+      enrollmentPolicyType: policyType,
+      policyProfile: {
+        source,
+        insurerReference: insurerReference || null,
+        coverageStart: coverageStart || null,
+        coverageEnd: coverageEnd || null,
+        insuredAsset,
+        coverageSummary,
+      },
+    });
+    revalidatePath("/dashboard", "layout");
+    return { ...result, policyholderName: fullName };
+  } catch (error) {
+    return {
+      success: false as const,
+      error: actionError(
+        error,
+        "Could not create the policyholder invitation.",
+      ),
+    };
+  }
 }

@@ -57,11 +57,11 @@ export function AppSidebar({
     .slice(0, 2);
 
   return (
-    <Sidebar collapsible="offcanvas" className="lg:hidden">
+    <Sidebar collapsible="offcanvas" className="xl:hidden">
       {/* Sidebar header: brand + user card */}
       <SidebarHeader>
-        <div className="flex items-center gap-2 px-2 py-1 font-semibold text-foreground">
-          <Shield className="h-5 w-5 text-primary" />
+        <div className="flex items-center gap-2.5 px-2 py-3 font-semibold tracking-tight text-foreground">
+          <Shield className="size-9 rounded-xl bg-primary p-2 text-primary-foreground" />
           <span>InsurePortal</span>
         </div>
       </SidebarHeader>
@@ -70,7 +70,7 @@ export function AppSidebar({
 
       {/* User card */}
       <SidebarHeader>
-        <div className="flex items-center gap-3 px-2">
+        <div className="flex items-center gap-3 rounded-xl border bg-muted/30 px-3 py-4">
           {user.image ? (
             <img
               src={user.image}
@@ -122,7 +122,7 @@ export function AppSidebar({
                 const Icon = item.icon;
                 return (
                   <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={isActive}>
+                    <SidebarMenuButton asChild isActive={isActive} className="h-10 rounded-lg px-3 text-muted-foreground data-[active=true]:bg-sidebar-accent data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground">
                       <Link href={item.href}>
                         <Icon />
                         <span>{item.label}</span>

@@ -1,38 +1,28 @@
-import { getMyAssignedClaims, getClaimTimeline, getClaimDetails } from "@/app/actions/agent/manage-claims";
-import { getProgressSteps } from "@/app/actions/agent/progress-steps";
+import { getMyAssignedClaims } from "@/app/actions/agent/manage-claims";
 import { getSessionUser } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { ROUTES } from "@/lib/routes";
 import { AgentDashboardClient } from "./agent-dashboard-client";
+import { getActiveOrganizationId } from "@/lib/organization-access";
 
 export default async function AgentDashboard() {
   const session = await getSessionUser();
-  if (!session || (session.role !== "agent" && session.role !== "head_agent" && session.role !== "admin")) {
+  if (
+    !session ||
+    (session.role !== "agent" &&
+      session.role !== "head_agent" &&
+      session.role !== "admin")
+  ) {
     redirect(ROUTES.SIGNIN);
   }
 
   const claims = await getMyAssignedClaims();
 
-  // If there are claims, fetch timeline and progress for the first one
-  let initialTimeline: Awaited<ReturnType<typeof getClaimTimeline>> = [];
-  let initialProgressSteps: Awaited<ReturnType<typeof getProgressSteps>> = [];
-  let initialClaimDetails: Awaited<ReturnType<typeof getClaimDetails>> = null;
-
-  if (claims.length > 0) {
-    [initialTimeline, initialProgressSteps, initialClaimDetails] = await Promise.all([
-      getClaimTimeline(claims[0].id),
-      getProgressSteps(claims[0].id),
-      getClaimDetails(claims[0].id),
-    ]);
-  }
-
   return (
     <AgentDashboardClient
+      key={await getActiveOrganizationId(session)}
       claims={claims}
       agentName={session.name}
-      initialTimeline={initialTimeline}
-      initialProgressSteps={initialProgressSteps}
-      initialClaimDetails={initialClaimDetails}
     />
   );
 }

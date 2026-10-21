@@ -19,6 +19,8 @@ import {
 import { AlertTriangle, Clock, User, Loader2 } from "lucide-react";
 import { useState, useTransition } from "react";
 import { assignClaimToAgent } from "@/app/actions/head-agent/manage-claims";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 interface UnassignedClaim {
   id: string;
@@ -47,17 +49,26 @@ export function UnassignedClaims({ claims, agents }: UnassignedClaimsProps) {
   );
   const [isPending, startTransition] = useTransition();
   const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   function handleAssign(claimId: string) {
     const agentId = selectedAgents[claimId];
     if (!agentId) return;
     setAssigningId(claimId);
     startTransition(async () => {
-      const result = await assignClaimToAgent(claimId, agentId);
-      if (result.success) {
-        setItems((prev) => prev.filter((c) => c.id !== claimId));
+      try {
+        const result = await assignClaimToAgent(claimId, agentId);
+        if (result.success) {
+          setItems((prev) => prev.filter((c) => c.id !== claimId));
+          setError(null);
+          router.refresh();
+        } else setError(result.error ?? "Unable to assign this claim");
+      } catch {
+        setError("Unable to save this assignment. Please try again.");
+      } finally {
+        setAssigningId(null);
       }
-      setAssigningId(null);
     });
   }
 
@@ -65,8 +76,8 @@ export function UnassignedClaims({ claims, agents }: UnassignedClaimsProps) {
     <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-destructive/10">
-            <AlertTriangle className="h-4 w-4 text-destructive" />
+          <div className="portal-icon">
+            <AlertTriangle className="h-4 w-4 text-primary" />
           </div>
           <div>
             <CardTitle className="text-lg">Unassigned Claims</CardTitle>
@@ -78,10 +89,15 @@ export function UnassignedClaims({ claims, agents }: UnassignedClaimsProps) {
         </div>
       </CardHeader>
       <CardContent>
+        {error && (
+          <p role="alert" className="mb-3 text-sm text-destructive">
+            {error}
+          </p>
+        )}
         {items.length === 0 ? (
-          <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center">
+          <div className="portal-empty">
             <p className="text-sm text-muted-foreground">
-              All claims have been assigned. Nice work!
+              No claims are waiting for assignment.
             </p>
           </div>
         ) : (
@@ -93,9 +109,12 @@ export function UnassignedClaims({ claims, agents }: UnassignedClaimsProps) {
               >
                 <div className="flex-1 space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-sm font-semibold text-foreground">
+                    <Link
+                      href={`/claims/${claim.id}`}
+                      className="font-mono text-sm font-semibold text-foreground hover:underline"
+                    >
                       {claim.claimNumber}
-                    </span>
+                    </Link>
                     <Badge
                       variant={
                         claim.policyType === "motor" ? "default" : "secondary"
@@ -147,7 +166,10 @@ export function UnassignedClaims({ claims, agents }: UnassignedClaimsProps) {
                   </Select>
                   <Button
                     size="sm"
-                    disabled={!selectedAgents[claim.id] || (isPending && assigningId === claim.id)}
+                    disabled={
+                      !selectedAgents[claim.id] ||
+                      (isPending && assigningId === claim.id)
+                    }
                     onClick={() => handleAssign(claim.id)}
                   >
                     {isPending && assigningId === claim.id ? (

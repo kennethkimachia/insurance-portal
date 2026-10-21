@@ -1,181 +1,196 @@
 "use client";
-
+import Link from "next/link";
 import { useState } from "react";
+import { DeleteDraftButton } from "@/components/claims/delete-draft-button";
 import { MotorClaimForm } from "@/components/claims/motor-claim-form";
 import { BurglaryClaimForm } from "@/components/claims/burglary-claim-form";
-import { Car, Building2 } from "lucide-react";
-
-type PolicyType = "motor" | "burglary";
-
-interface Policy {
-  id: string;
-  policyNumber: string;
-  policyType: string;
-  organizationName: string;
-}
-
-interface ClaimsPageClientProps {
-  policies: Policy[];
-}
-
-export default function ClaimsPageClient({ policies }: ClaimsPageClientProps) {
-  const [selectedType, setSelectedType] = useState<PolicyType | null>(null);
-  const [selectedPolicyId, setSelectedPolicyId] = useState<string | null>(null);
-
-  // Filter policies of the selected type
-  const filteredPolicies = policies.filter(
-    (p) => p.policyType === selectedType
+import type { ResumableClaimDraft } from "@/components/claims/use-claim-draft";
+import type {
+  getPoliciesForClaimForm,
+  getMyDrafts,
+} from "@/app/actions/user/my-claims";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Car, Building2, ArrowLeft } from "lucide-react";
+export default function ClaimsPageClient({
+  policies,
+  drafts,
+  initialPolicyId,
+  initialDraft,
+  initialClaimId,
+  recoveryMessage,
+}: {
+  policies: Awaited<ReturnType<typeof getPoliciesForClaimForm>>;
+  drafts: Awaited<ReturnType<typeof getMyDrafts>>;
+  initialPolicyId?: string;
+  initialDraft?: ResumableClaimDraft;
+  initialClaimId?: string;
+  recoveryMessage?: string;
+}) {
+  const [search, setSearch] = useState("");
+  const selected = policies.find((p) => p.id === initialPolicyId);
+  const visible = policies.filter((p) =>
+    `${p.policyNumber} ${p.policyType} ${p.policyholderName ?? ""}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
   );
-
-  function handleSelectType(type: PolicyType) {
-    setSelectedType(type);
-    const typedPolicies = policies.filter((p) => p.policyType === type);
-    if (typedPolicies.length === 1) {
-      setSelectedPolicyId(typedPolicies[0].id);
-    } else {
-      setSelectedPolicyId(null);
-    }
-  }
-
-  function handleBack() {
-    setSelectedType(null);
-    setSelectedPolicyId(null);
-  }
-
   return (
-    <div className="min-h-[calc(100svh-3.5rem)] bg-muted/30">
-      <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            File a New Claim
-          </h1>
-          <p className="mt-1 text-muted-foreground">
-            Select your policy type and policy to begin filing a claim.
-          </p>
-        </div>
-
-        {/* Policy type selector */}
-        {!selectedType ? (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <button
-              onClick={() => handleSelectType("motor")}
-              className="group flex min-h-52 flex-col items-center justify-center gap-4 rounded-xl border bg-card p-6 text-center shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-8"
-            >
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted transition-colors group-hover:bg-primary/10">
-                <Car className="h-7 w-7 text-muted-foreground transition-colors group-hover:text-primary" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-foreground">
-                  Motor Insurance
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Report a motor accident, theft, or vehicle damage
-                </p>
-              </div>
-            </button>
-
-            <button
-              onClick={() => handleSelectType("burglary")}
-              className="group flex min-h-52 flex-col items-center justify-center gap-4 rounded-xl border bg-card p-6 text-center shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-8"
-            >
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted transition-colors group-hover:bg-primary/10">
-                <Building2 className="h-7 w-7 text-muted-foreground transition-colors group-hover:text-primary" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-foreground">
-                  Burglary Insurance
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Report a break-in, stolen property, or premises damage
-                </p>
-              </div>
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {/* Back to selector */}
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleBack}
-                className="inline-flex min-h-9 items-center rounded-lg px-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                ← Change policy type
-              </button>
-              <div className="flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1">
-                {selectedType === "motor" ? (
-                  <Car className="h-3.5 w-3.5 text-primary" />
-                ) : (
-                  <Building2 className="h-3.5 w-3.5 text-primary" />
-                )}
-                <span className="text-xs font-medium text-primary">
-                  {selectedType === "motor" ? "Motor" : "Burglary"}
-                </span>
-              </div>
-            </div>
-
-            {/* Policy selection if multiple policies exist of the same type */}
-            {filteredPolicies.length === 0 ? (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-center">
-                <p className="text-sm font-medium text-destructive">
-                  No active policy found
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  You do not have an active {selectedType} policy registered.
-                  Please contact your agent to get onboarded first.
-                </p>
-              </div>
-            ) : filteredPolicies.length > 1 && !selectedPolicyId ? (
-              <div className="rounded-xl border bg-card p-5 shadow-sm sm:p-6">
-                <h3 className="text-sm font-semibold text-foreground">
-                  Select Policy Number
-                </h3>
-                <p className="text-xs text-muted-foreground">
-                  You have multiple active policies of this type. Select one to proceed.
-                </p>
-                <div className="mt-4 grid gap-3">
-                  {filteredPolicies.map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => setSelectedPolicyId(p.id)}
-                      className="flex flex-col gap-3 rounded-lg border bg-background p-4 text-left transition-all hover:border-primary/50 hover:bg-primary/5 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div>
-                        <p className="font-mono text-sm font-bold text-foreground">
-                          {p.policyNumber}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {p.organizationName}
-                        </p>
-                      </div>
-                      <span className="text-xs font-medium text-primary">
-                        Select →
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              selectedPolicyId && (
-                <div className="space-y-4">
-                  {filteredPolicies.length > 1 && (
-                    <button
-                      onClick={() => setSelectedPolicyId(null)}
-                      className="text-xs font-medium text-muted-foreground hover:text-foreground"
-                    >
-                      ← Choose another policy
-                    </button>
-                  )}
-                  {selectedType === "motor" ? (
-                    <MotorClaimForm policyId={selectedPolicyId} />
-                  ) : (
-                    <BurglaryClaimForm policyId={selectedPolicyId} />
-                  )}
-                </div>
-              )
-            )}
-          </div>
-        )}
+    <div className="portal-page max-w-3xl">
+      <div>
+        <h1 className="portal-heading">
+          {initialDraft ? "Resume your incident report" : "Report an incident"}
+        </h1>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          Choose an enrolled Motor or Burglary policy. You can report before all
+          supporting information is available.
+        </p>
       </div>
+      {recoveryMessage && (
+        <p
+          role="alert"
+          className="rounded-lg border border-amber-300/70 bg-amber-50 dark:border-amber-500/25 dark:bg-amber-500/10 p-3 text-sm leading-6 text-amber-950 dark:text-amber-200"
+        >
+          {recoveryMessage}
+        </p>
+      )}
+      {selected ? (
+        <>
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/claim-forms">
+              <ArrowLeft />
+              Choose another policy
+            </Link>
+          </Button>
+          {selected.policyType === "motor" ? (
+            <MotorClaimForm
+              key={selected.id}
+              policyId={selected.id}
+              policyContext={selected}
+              initialDraft={initialDraft}
+              initialClaimId={initialClaimId}
+            />
+          ) : (
+            <BurglaryClaimForm
+              key={selected.id}
+              policyId={selected.id}
+              policyContext={selected}
+              initialDraft={initialDraft}
+              initialClaimId={initialClaimId}
+            />
+          )}
+        </>
+      ) : (
+        <>
+          {drafts.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Saved drafts</CardTitle>
+                <CardDescription>
+                  Resume a confirmed save before starting another report for the
+                  same incident.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {drafts.map((d) => (
+                  <div
+                    key={d.id}
+                    className="portal-row flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/15 p-4 text-sm"
+                  >
+                    <Link
+                      className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2 hover:text-primary"
+                      href={`/claim-forms/${d.policyType}?draft=${d.id}`}
+                    >
+                      <span>
+                        {d.policyNumber} ·{" "}
+                        {d.policyType === "motor" ? "Motor" : "Burglary"}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        Saved{" "}
+                        {new Date(d.updatedAt).toLocaleString("en-KE", {
+                          timeZone: "Africa/Nairobi",
+                        })}
+                      </span>
+                    </Link>
+                    <DeleteDraftButton claimId={d.id} />
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+          {policies.length > 2 && (
+            <>
+              <label htmlFor="policy-search" className="text-sm font-medium">
+                Find a policy or policyholder
+              </label>
+              <Input
+                id="policy-search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Name, policy number or type"
+              />
+            </>
+          )}
+          <div className="grid gap-4 sm:grid-cols-2">
+            {visible.map((p) => (
+              <Card key={p.id}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    {p.policyType === "motor" ? (
+                      <Car className="size-10 rounded-xl bg-primary/10 p-2.5 text-primary" />
+                    ) : (
+                      <Building2 className="size-10 rounded-xl bg-primary/10 p-2.5 text-primary" />
+                    )}
+                    {p.policyType === "motor" ? "Motor" : "Burglary"}
+                  </CardTitle>
+                  <CardDescription>
+                    {p.policyNumber}
+                    {p.policyholderName ? ` · ${p.policyholderName}` : ""}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="text-sm">
+                    {p.insuredAsset || "Asset details pending confirmation"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {p.source === "demo" ? "Demo profile" : "Manual profile"}.
+                    Insurer coverage requires confirmation.
+                  </p>
+                  <Button asChild>
+                    <Link
+                      href={`/claim-forms/${p.policyType}?policy=${p.id}${initialClaimId ? `&draft=${initialClaimId}` : ""}`}
+                    >
+                      Start report
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          {visible.length === 0 && (
+            <Card>
+              <CardContent className="space-y-2 pt-6">
+                <p className="font-medium">
+                  {policies.length
+                    ? "No matching policy"
+                    : "No enrolled policy available"}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {policies.length
+                    ? "Try another name or policy number."
+                    : "Accept your verified invitation or contact the agent who invited you."}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
     </div>
   );
 }

@@ -87,7 +87,7 @@ export function ManageOrganizations({
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+            <div className="portal-icon">
               <Building2 className="h-4 w-4 text-primary" />
             </div>
             <div>
@@ -190,7 +190,7 @@ export function ManageOrganizations({
           {orgs.map((org) => (
             <div
               key={org.id}
-              className="flex flex-col gap-2 rounded-lg border bg-background/70 p-3 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between"
+              className="flex flex-col gap-2 rounded-xl border border-border/80 bg-muted/15 p-4 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2">

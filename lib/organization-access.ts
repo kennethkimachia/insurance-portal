@@ -1,10 +1,11 @@
-"use server";
+import "server-only";
 
 import { db } from "@/db";
 import { agentOrganizations, organizations } from "@/db/schema";
 import type { SessionUser } from "@/lib/session";
 import { and, eq } from "drizzle-orm";
 import { cookies } from "next/headers";
+import { z } from "zod";
 
 export async function canAccessOrganization(
   session: SessionUser,
@@ -40,7 +41,11 @@ export async function getActiveOrganizationId(
   session: SessionUser,
 ): Promise<string | null> {
   const requestedId = (await cookies()).get("active_organization_id")?.value;
-  if (requestedId && (await canAccessOrganization(session, requestedId))) {
+  if (
+    requestedId &&
+    z.string().uuid().safeParse(requestedId).success &&
+    (await canAccessOrganization(session, requestedId))
+  ) {
     return requestedId;
   }
 

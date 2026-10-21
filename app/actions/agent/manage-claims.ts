@@ -1,5 +1,8 @@
 "use server";
 
+import { actionError } from "@/lib/action-errors";
+
+import { getActorProfiles, profileFor } from "@/lib/clerk-directory";
 import { db } from "@/db";
 import {
   claims,
@@ -10,20 +13,32 @@ import {
   motorClaimDetails,
   burglaryClaimDetails,
   burglaryLossItems,
-  user,
   organizations,
+  claimEvents,
+  claimProgressSteps,
+  evidenceRequests,
 } from "@/db/schema";
 import { requireSession } from "@/lib/session";
 import { requirePermission, permissions } from "@/lib/permissions";
-import { eq, and, desc, asc } from "drizzle-orm";
-
-import { getActiveOrganizationId, requireOrganizationAccess } from "@/lib/organization-access";
-// â”€â”€ Get my assigned claims â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+import { eq, and, desc, asc, sql, ne, notInArray, or } from "drizzle-orm";
+import {
+  getActiveOrganizationId,
+  requireOrganizationAccess,
+} from "@/lib/organization-access";
+import { requireClaimAccess, lockClaimForMutation } from "@/lib/claim-access";
+import {
+  statusLabels,
+  validateStatusTransition,
+  validateClaimReadiness,
+  isClaimStatus,
+  closedClaimStatuses,
+  type ClaimStatus,
+} from "@/lib/claim-workflow";
+import { revalidatePath } from "next/cache";
 
 export async function getMyAssignedClaims() {
   const session = await requireSession();
   requirePermission(session.role, permissions.CLAIM_UPDATE_STATUS);
-
   const organizationId = await getActiveOrganizationId(session);
   if (!organizationId) return [];
   await requireOrganizationAccess(session, organizationId);
@@ -32,91 +47,65 @@ export async function getMyAssignedClaims() {
       id: claims.id,
       claimNumber: claims.claimNumber,
       status: claims.status,
+      openRequestCount: sql<number>`(SELECT count(*)::int FROM evidence_requests er WHERE er.claim_id = ${claims.id} AND er.status <> 'resolved')`,
+      overdueRequestCount: sql<number>`(SELECT count(*)::int FROM evidence_requests er WHERE er.claim_id = ${claims.id} AND er.status <> 'resolved' AND er.due_at < now())`,
       description: claims.description,
       policyType: policies.policyType,
-      policyholderName: user.name,
+      policyholderId: policies.userId,
       organizationName: organizations.name,
+      organizationId: claims.organizationId,
       createdAt: claims.createdAt,
     })
     .from(claims)
     .innerJoin(policies, eq(policies.id, claims.policyId))
-    .innerJoin(user, eq(user.id, policies.userId))
     .innerJoin(organizations, eq(organizations.id, claims.organizationId))
-    .where(and(eq(claims.assignedAgentId, session.id), eq(claims.organizationId, organizationId)))
+    .where(
+      and(
+        eq(claims.assignedAgentId, session.id),
+        eq(claims.organizationId, organizationId),
+      ),
+    )
     .orderBy(desc(claims.createdAt));
-
-  return result.map((c) => ({
-    ...c,
-    createdAt: c.createdAt.toISOString(),
+  const profiles = await getActorProfiles(result.map((c) => c.policyholderId));
+  return result.map((claim) => ({
+    policyholderName: profileFor(profiles, claim.policyholderId).name,
+    ...claim,
+    openRequestCount: closedClaimStatuses.includes(claim.status)
+      ? 0
+      : claim.openRequestCount,
+    overdueRequestCount: closedClaimStatuses.includes(claim.status)
+      ? 0
+      : claim.overdueRequestCount,
+    createdAt: claim.createdAt.toISOString(),
   }));
 }
 
-// â”€â”€ Get full claim details â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
 export async function getClaimDetails(claimId: string) {
   const session = await requireSession();
-
-  const [claim] = await db
-    .select({
-      id: claims.id,
-      claimNumber: claims.claimNumber,
-      status: claims.status,
-      description: claims.description,
-      assignedAgentId: claims.assignedAgentId,
-      policyId: claims.policyId,
-      policyNumber: policies.policyNumber,
-      policyType: policies.policyType,
-      policyholderName: user.name,
-      policyholderEmail: user.email,
-      organizationId: claims.organizationId,
-      organizationName: organizations.name,
-      createdAt: claims.createdAt,
-    })
-    .from(claims)
-    .innerJoin(policies, eq(policies.id, claims.policyId))
-    .innerJoin(user, eq(user.id, policies.userId))
-    .innerJoin(organizations, eq(organizations.id, claims.organizationId))
-    .where(eq(claims.id, claimId))
-    .limit(1);
-
-  if (!claim) return null;
-
-  await requireOrganizationAccess(session, claim.organizationId);
-  // Auth check â€” only the assigned agent, head_agent, or admin can view
-  if (session.role === "agent" && claim.assignedAgentId !== session.id) {
-    return null;
-  }
-
-  const attachments = await db
-    .select({
-      id: claimAttachments.id,
-      originalFilename: claimAttachments.originalFilename,
-      contentType: claimAttachments.contentType,
-      sizeBytes: claimAttachments.sizeBytes,
-      createdAt: claimAttachments.createdAt,
-    })
-    .from(claimAttachments)
-    .where(eq(claimAttachments.claimId, claimId))
-    .orderBy(desc(claimAttachments.createdAt));
-
-  const [motorDetails] =
+  const claim = await requireClaimAccess(session, claimId);
+  const [attachments, motorRows, burglaryRows] = await Promise.all([
+    db
+      .select()
+      .from(claimAttachments)
+      .where(eq(claimAttachments.claimId, claimId))
+      .orderBy(desc(claimAttachments.createdAt)),
     claim.policyType === "motor"
-      ? await db
+      ? db
           .select()
           .from(motorClaimDetails)
           .where(eq(motorClaimDetails.claimId, claimId))
           .limit(1)
-      : [];
-
-  const [burglaryDetails] =
+      : Promise.resolve([]),
     claim.policyType === "burglary"
-      ? await db
+      ? db
           .select()
           .from(burglaryClaimDetails)
           .where(eq(burglaryClaimDetails.claimId, claimId))
           .limit(1)
-      : [];
-
+      : Promise.resolve([]),
+  ]);
+  const motorDetails = motorRows[0];
+  const burglaryDetails = burglaryRows[0];
   const lossItems = burglaryDetails
     ? await db
         .select({
@@ -129,10 +118,21 @@ export async function getClaimDetails(claimId: string) {
         .from(burglaryLossItems)
         .where(eq(burglaryLossItems.burglaryDetailId, burglaryDetails.id))
     : [];
-
   return {
     ...claim,
+    assessmentSummary: session.role === "user" ? null : claim.assessmentSummary,
+    estimatedLossAmount:
+      session.role === "user" ? null : claim.estimatedLossAmount,
+    assessedBy: session.role === "user" ? null : claim.assessedBy,
     createdAt: claim.createdAt.toISOString(),
+    updatedAt: claim.updatedAt.toISOString(),
+    submittedAt: claim.submittedAt?.toISOString() ?? null,
+    settlementRecordedAt: claim.settlementRecordedAt?.toISOString() ?? null,
+    withdrawalRequestedAt: claim.withdrawalRequestedAt?.toISOString() ?? null,
+    assessedAt:
+      session.role === "user"
+        ? null
+        : (claim.assessedAt?.toISOString() ?? null),
     motorDetails: motorDetails
       ? { ...motorDetails, createdAt: motorDetails.createdAt.toISOString() }
       : null,
@@ -144,183 +144,334 @@ export async function getClaimDetails(claimId: string) {
         }
       : null,
     attachments: attachments.map((attachment) => ({
-      ...attachment,
+      id: attachment.id,
+      originalFilename: attachment.originalFilename,
+      contentType: attachment.contentType,
       sizeBytes: attachment.sizeBytes ?? 0,
+      category: attachment.category,
+      lossItemId: attachment.lossItemId,
+      uploadState: attachment.uploadState,
+      uploadError: attachment.uploadError,
+      scanState: attachment.scanState,
+      reviewStatus: attachment.reviewStatus,
+      reviewNote: attachment.reviewNote,
       createdAt: attachment.createdAt.toISOString(),
     })),
   };
 }
 
-// â”€â”€ Update claim status â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-type ClaimStatus =
-  | "pending"
-  | "assigned"
-  | "surveyor_dispatched"
-  | "under_review"
-  | "assessment_complete"
-  | "approved"
-  | "settled"
-  | "rejected";
-
-const STATUS_LABELS: Record<ClaimStatus, string> = {
-  pending: "Submitted",
-  assigned: "Assigned",
-  surveyor_dispatched: "Surveyor Dispatched",
-  under_review: "Under Review",
-  assessment_complete: "Assessment Complete",
-  approved: "Approved",
-  settled: "Settled",
-  rejected: "Rejected",
-};
+export interface OutcomeDetails {
+  source?: "manual" | "simulated";
+  settlementAmount?: string;
+  settlementReference?: string;
+  carrierReference?: string;
+}
 
 export async function updateClaimStatus(
   claimId: string,
   newStatus: ClaimStatus,
-  rejectionReason?: string,
+  reason?: string,
+  details?: OutcomeDetails,
 ) {
-  const session = await requireSession();
-  requirePermission(session.role, permissions.CLAIM_UPDATE_STATUS);
-
-  const [claim] = await db
-    .select({
-      id: claims.id,
-      claimNumber: claims.claimNumber,
-      assignedAgentId: claims.assignedAgentId,
-      policyId: claims.policyId,
-      organizationId: claims.organizationId,
-    })
-    .from(claims)
-    .where(eq(claims.id, claimId))
-    .limit(1);
-
-  if (!claim) return { success: false, error: "Claim not found" };
-
-  // Only the assigned agent (or head_agent/admin) can update
-  await requireOrganizationAccess(session, claim.organizationId);
-  if (session.role === "agent" && claim.assignedAgentId !== session.id) {
-    return { success: false, error: "This claim is not assigned to you" };
-  }
-
-  const reason = rejectionReason?.trim();
-  if (newStatus === "rejected" && (!reason || reason.length < 10)) {
+  try {
+    const session = await requireSession();
+    const claim = await requireClaimAccess(session, claimId, "manage");
+    const error = validateStatusTransition(
+      claim.status,
+      newStatus,
+      session.role,
+      reason,
+    );
+    if (error || !isClaimStatus(newStatus))
+      return { success: false, error: error ?? "Invalid claim status" };
+    const outcome = ["approved", "rejected", "withdrawn", "settled"].includes(
+      newStatus,
+    );
+    if (
+      outcome &&
+      (!details?.source || !["manual", "simulated"].includes(details.source))
+    )
+      return {
+        success: false,
+        error: "Choose a manual or simulated outcome source",
+      };
+    const settlementAmount = details?.settlementAmount?.trim();
+    const reference = details?.settlementReference?.trim();
+    if (
+      newStatus === "settled" &&
+      (!settlementAmount ||
+        !/^\d{1,12}(?:\.\d{1,2})?$/.test(settlementAmount) ||
+        Number(settlementAmount) <= 0 ||
+        !reference ||
+        reference.length < 3 ||
+        reference.length > 100)
+    ) {
+      return {
+        success: false,
+        error:
+          "Record a positive settlement amount and a payment or simulation reference",
+      };
+    }
+    const message = `Claim ${claim.claimNumber}: ${statusLabels[newStatus]}.${reason?.trim() ? ` ${reason.trim()}` : ""}${outcome ? ` (${details?.source === "simulated" ? "Simulated outcome" : "Manually recorded outcome"})` : ""}`;
+    await db.transaction(async (tx) => {
+      const fresh = await lockClaimForMutation(
+        tx,
+        session,
+        claimId,
+        claim.version,
+      );
+      const [[requests], [documents]] = await Promise.all([
+        tx
+          .select({ count: sql<number>`COUNT(*)::int` })
+          .from(evidenceRequests)
+          .where(
+            and(
+              eq(evidenceRequests.claimId, claimId),
+              ne(evidenceRequests.status, "resolved"),
+            ),
+          ),
+        tx
+          .select({ count: sql<number>`COUNT(*)::int` })
+          .from(claimAttachments)
+          .where(
+            and(
+              eq(claimAttachments.claimId, claimId),
+              or(
+                eq(claimAttachments.uploadState, "uploading"),
+                notInArray(claimAttachments.reviewStatus, [
+                  "accepted",
+                  "waived",
+                ]),
+              ),
+            ),
+          ),
+      ]);
+      const readinessError = validateClaimReadiness(newStatus, {
+        assessmentSummary: fresh.assessmentSummary,
+        openEvidenceRequests: requests.count,
+        unreviewedDocuments: documents.count,
+      });
+      if (readinessError) throw new Error(readinessError);
+      const [updated] = await tx
+        .update(claims)
+        .set({
+          status: newStatus,
+          version: sql`${claims.version} + 1`,
+          ...(outcome
+            ? { outcomeReason: reason!.trim(), outcomeSource: details!.source }
+            : {}),
+          ...(newStatus === "under_review" &&
+          [...closedClaimStatuses, "approved"].includes(claim.status)
+            ? {
+                outcomeReason: null,
+                outcomeSource: null,
+                withdrawalRequestedAt: null,
+                withdrawalReason: null,
+              }
+            : {}),
+          ...(newStatus === "settled"
+            ? {
+                settlementAmount,
+                settlementReference: reference,
+                settlementRecordedAt: new Date(),
+              }
+            : {}),
+          ...(details?.carrierReference?.trim()
+            ? {
+                carrierReference: details.carrierReference.trim().slice(0, 100),
+              }
+            : {}),
+        })
+        .where(
+          and(
+            eq(claims.id, claimId),
+            eq(claims.version, claim.version),
+            eq(claims.status, claim.status),
+          ),
+        )
+        .returning({ id: claims.id });
+      if (!updated)
+        throw new Error(
+          "This claim changed. Refresh before updating its status.",
+        );
+      await tx
+        .update(claimProgressSteps)
+        .set({
+          isCompleted: outcome,
+          completedAt: outcome ? new Date() : null,
+          completedBy: outcome ? session.id : null,
+        })
+        .where(
+          and(
+            eq(claimProgressSteps.claimId, claimId),
+            eq(claimProgressSteps.isSystem, true),
+            eq(claimProgressSteps.label, "Outcome recorded"),
+          ),
+        );
+      await tx.insert(claimEvents).values({
+        claimId,
+        actorId: session.id,
+        type: "status_changed",
+        visibility: "public",
+        content: message,
+        metadata: {
+          from: claim.status,
+          to: newStatus,
+          reason: reason?.trim(),
+          source: details?.source,
+        },
+      });
+      await tx.insert(claimNotifications).values({
+        claimId,
+        userId: claim.policyholderId,
+        type: "status_change",
+        message,
+      });
+    });
+    revalidatePath("/claims");
+    revalidatePath(`/claims/${claimId}`);
+    revalidatePath("/dashboard");
+    return { success: true };
+  } catch (error) {
     return {
       success: false,
-      error: "A clear rejection reason of at least 10 characters is required",
+      error: actionError(error, "Unable to update the claim"),
     };
   }
-  await db
-    .update(claims)
-    .set({ status: newStatus })
-    .where(eq(claims.id, claimId));
-
-  // Notify policyholder
-  const [policy] = await db
-    .select({ userId: policies.userId })
-    .from(policies)
-    .where(eq(policies.id, claim.policyId))
-    .limit(1);
-
-  if (policy) {
-    await db.insert(claimNotifications).values({
-      claimId: claim.id,
-      userId: policy.userId,
-      type: "status_change",
-      message: newStatus === "rejected"
-        ? `Your claim ${claim.claimNumber} was rejected. Reason: ${reason}`
-        : `Your claim ${claim.claimNumber} has been updated to "${STATUS_LABELS[newStatus]}".`,
-    });
-  }
-
-  // Also add a system note to the timeline
-  await db.insert(claimNotes).values({
-    claimId: claim.id,
-    authorId: session.id,
-    content: newStatus === "rejected"
-      ? `Claim rejected. Reason: ${reason}`
-      : `Status updated to "${STATUS_LABELS[newStatus]}".`,
-  });
-
-  return { success: true };
 }
 
-// â”€â”€ Add claim note â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-export async function addClaimNote(claimId: string, content: string) {
-  const session = await requireSession();
-  requirePermission(session.role, permissions.NOTE_CREATE);
-
-  if (!content.trim()) {
-    return { success: false, error: "Note content is required" };
-  }
-
-  const [claim] = await db
-    .select({
-      id: claims.id,
-      claimNumber: claims.claimNumber,
-      assignedAgentId: claims.assignedAgentId,
-      policyId: claims.policyId,
-      organizationId: claims.organizationId,
-    })
-    .from(claims)
-    .where(eq(claims.id, claimId))
-    .limit(1);
-
-  if (!claim) return { success: false, error: "Claim not found" };
-  await requireOrganizationAccess(session, claim.organizationId);
-  if (session.role === "agent" && claim.assignedAgentId !== session.id) {
-    return { success: false, error: "This claim is not assigned to you" };
-  }
-
-  await db.insert(claimNotes).values({
-    claimId: claim.id,
-    authorId: session.id,
-    content: content.trim(),
-  });
-
-  // Notify the policyholder
-  const [policy] = await db
-    .select({ userId: policies.userId })
-    .from(policies)
-    .where(eq(policies.id, claim.policyId))
-    .limit(1);
-
-  if (policy) {
-    await db.insert(claimNotifications).values({
-      claimId: claim.id,
-      userId: policy.userId,
-      type: "note_added",
-      message: `A new update has been posted on your claim ${claim.claimNumber}.`,
+export async function addClaimNote(
+  claimId: string,
+  content: string,
+  visibility: "public" | "internal" = "public",
+) {
+  try {
+    const session = await requireSession();
+    const claim = await requireClaimAccess(session, claimId, "comment");
+    const cleanContent = content.trim();
+    if (cleanContent.length < 2 || cleanContent.length > 4000)
+      return {
+        success: false,
+        error: "Enter a message between 2 and 4,000 characters",
+      };
+    if (
+      !["public", "internal"].includes(visibility) ||
+      (session.role === "user" && visibility !== "public")
+    )
+      return { success: false, error: "Invalid message visibility" };
+    if (claim.status === "draft" || closedClaimStatuses.includes(claim.status))
+      return {
+        success: false,
+        error: "Messages are available on open submitted claims",
+      };
+    const note = await db.transaction(async (tx) => {
+      await lockClaimForMutation(
+        tx,
+        session,
+        claimId,
+        claim.version,
+        "comment",
+      );
+      const [created] = await tx
+        .insert(claimNotes)
+        .values({
+          claimId,
+          authorId: session.id,
+          content: cleanContent,
+          visibility,
+        })
+        .returning();
+      await tx.insert(claimEvents).values({
+        claimId,
+        actorId: session.id,
+        type: "note_added",
+        visibility,
+        content: cleanContent,
+        metadata: { noteId: created.id },
+      });
+      if (visibility === "public") {
+        const recipient =
+          session.role === "user"
+            ? claim.assignedAgentId
+            : claim.policyholderId;
+        if (recipient)
+          await tx.insert(claimNotifications).values({
+            claimId,
+            userId: recipient,
+            type: "note_added",
+            message: `A new message is available on claim ${claim.claimNumber}.`,
+          });
+      }
+      return created;
     });
+    revalidatePath(`/claims/${claimId}`);
+    return {
+      success: true,
+      note: {
+        id: note.id,
+        author: session.name,
+        role: session.role,
+        content: note.content,
+        visibility: note.visibility,
+        createdAt: note.createdAt.toISOString(),
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: actionError(error, "Unable to post the message"),
+    };
   }
-
-  return { success: true };
 }
-
-// â”€â”€ Get claim timeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getClaimTimeline(claimId: string) {
-
-  if (!(await getClaimDetails(claimId))) return [];
+  const session = await requireSession();
+  await requireClaimAccess(session, claimId);
   const notes = await db
     .select({
       id: claimNotes.id,
       content: claimNotes.content,
       authorId: claimNotes.authorId,
-      authorName: user.name,
-      authorRole: user.role,
+      visibility: claimNotes.visibility,
       createdAt: claimNotes.createdAt,
     })
     .from(claimNotes)
-    .innerJoin(user, eq(user.id, claimNotes.authorId))
-    .where(eq(claimNotes.claimId, claimId))
+    .where(
+      and(
+        eq(claimNotes.claimId, claimId),
+        session.role === "user"
+          ? eq(claimNotes.visibility, "public")
+          : undefined,
+      ),
+    )
     .orderBy(asc(claimNotes.createdAt));
-
-  return notes.map((n) => ({
-    id: n.id,
-    author: n.authorName,
-    role: n.authorRole as string,
-    content: n.content,
-    createdAt: n.createdAt.toISOString(),
-  }));
+  const events = await db
+    .select({
+      id: claimEvents.id,
+      content: claimEvents.content,
+      authorId: claimEvents.actorId,
+      visibility: claimEvents.visibility,
+      createdAt: claimEvents.createdAt,
+    })
+    .from(claimEvents)
+    .where(
+      and(
+        eq(claimEvents.claimId, claimId),
+        sql`${claimEvents.type} <> 'note_added'`,
+        session.role === "user"
+          ? eq(claimEvents.visibility, "public")
+          : undefined,
+      ),
+    );
+  const profiles = await getActorProfiles([...notes, ...events].map((e) => e.authorId));
+  return [...notes, ...events]
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+    .map((entry) => ({
+      id: entry.id,
+      author: entry.authorId ? profileFor(profiles, entry.authorId).name : "Portal",
+      role: entry.authorId ? profileFor(profiles, entry.authorId).role ?? "unknown" : "system",
+      content: entry.content,
+      visibility: entry.visibility,
+      createdAt: entry.createdAt.toISOString(),
+    }));
 }

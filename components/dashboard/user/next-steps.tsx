@@ -19,7 +19,7 @@ export function NextSteps({ step }: NextStepsProps) {
       </CardHeader>
       <CardContent>
         <div
-          className={`rounded-lg border p-4 ${
+          className={`rounded-xl border p-5 ${
             step.actionRequired
               ? "border-amber-300/50 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-950/20"
               : "border-emerald-300/50 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-950/20"
@@ -46,7 +46,7 @@ export function NextSteps({ step }: NextStepsProps) {
                 {step.actionRequired ? "Action Required" : "No Action Needed"}
               </p>
               <p
-                className={`mt-1 text-sm ${
+                className={`mt-2 text-sm leading-6 ${
                   step.actionRequired
                     ? "text-amber-700 dark:text-amber-400/80"
                     : "text-emerald-700 dark:text-emerald-400/80"

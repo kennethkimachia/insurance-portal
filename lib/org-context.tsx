@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, ReactNode, useTransition } from "react";
+import { createContext, useContext, ReactNode, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 interface Organization {
@@ -27,23 +27,37 @@ export function OrgProvider({
   initialOrgId: string;
 }) {
   const router = useRouter();
-  const [, startTransition] = useTransition();
-  const [currentOrgId, setCurrentOrgIdState] = useState(initialOrgId);
+  const [switching, startTransition] = useTransition();
 
   const currentOrg =
-    organizations.find((o) => o.id === currentOrgId) ??
+    organizations.find((o) => o.id === initialOrgId) ??
     organizations[0] ??
     null;
 
   function setCurrentOrgId(id: string) {
-    setCurrentOrgIdState(id);
+    if (
+      switching ||
+      id === currentOrg?.id ||
+      !organizations.some((org) => org.id === id)
+    )
+      return;
     document.cookie = `active_organization_id=${id}; path=/; max-age=31536000; SameSite=Lax`;
     startTransition(() => router.refresh());
   }
 
   return (
     <OrgContext.Provider value={{ currentOrg, organizations, setCurrentOrgId }}>
-      {children}
+      {switching ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex min-h-screen items-center justify-center text-sm text-muted-foreground"
+        >
+          Loading organization workspace…
+        </div>
+      ) : (
+        children
+      )}
     </OrgContext.Provider>
   );
 }

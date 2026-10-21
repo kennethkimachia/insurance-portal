@@ -58,7 +58,7 @@ export function ClaimTrackerDynamic({
       </CardHeader>
       <CardContent>
         {progressSteps.length === 0 ? (
-          <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center">
+          <div className="portal-empty">
             <p className="text-sm text-muted-foreground">
               Your claim has been submitted. Progress updates will appear here
               once your agent begins processing.
@@ -150,7 +150,7 @@ export function ClaimTrackerDynamic({
                         </p>
                       )}
                       {step.isCompleted && step.completedAt && (
-                        <p className="mt-1 text-[10px] text-emerald-600/70 dark:text-emerald-400/70">
+                        <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-400">
                           Completed{" "}
                           {new Date(step.completedAt).toLocaleDateString(
                             "en-KE",

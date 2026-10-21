@@ -3,7 +3,6 @@ import {
   uuid,
   varchar,
   text,
-  integer,
   timestamp,
 } from "drizzle-orm/pg-core";
 import { claims } from "./claims";
@@ -43,7 +42,7 @@ export const motorClaimDetails = pgTable("motor_claim_details", {
 
   // Damage & third-party
   damageSummary: text("damage_summary").notNull(),
-  isVehicleDrivable: varchar("is_vehicle_drivable", { length: 5 }).notNull(), // "yes" | "no"
+  isVehicleDrivable: varchar("is_vehicle_drivable", { length: 10 }).notNull(),
   vehicleCurrentLocation: text("vehicle_current_location").notNull(),
   thirdPartyRegistration: varchar("third_party_registration", { length: 50 }),
   thirdPartyInjuries: text("third_party_injuries"),

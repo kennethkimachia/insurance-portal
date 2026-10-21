@@ -1,10 +1,11 @@
-﻿import { ManageOrganizations } from "@/components/dashboard/admin/manage-organizations";
+import { hydrateAssignments, listPortalStaff } from "@/lib/clerk-directory";
+import { ManageOrganizations } from "@/components/dashboard/admin/manage-organizations";
 import { AgentOrgAssignments } from "@/components/dashboard/admin/agent-org-assignments";
 import { db } from "@/db";
-import { agentOrganizations, organizations, user } from "@/db/schema";
+import { agentOrganizations, organizations } from "@/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { ROUTES } from "@/lib/routes";
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { Building2, FileText, ShieldCheck, Users } from "lucide-react";
 
@@ -29,7 +30,7 @@ export default async function OrganizationsPage() {
           )`,
           claimCount: sql<number>`(
             SELECT COUNT(*)::int FROM claims
-            WHERE claims.organization_id = ${organizations.id}
+            WHERE claims.organization_id = ${organizations.id} AND claims.status <> 'draft'
           )`,
           customerCount: sql<number>`(
             SELECT COUNT(DISTINCT policies.user_id)::int FROM policies
@@ -50,7 +51,7 @@ export default async function OrganizationsPage() {
           )`,
           claimCount: sql<number>`(
             SELECT COUNT(*)::int FROM claims
-            WHERE claims.organization_id = ${organizations.id}
+            WHERE claims.organization_id = ${organizations.id} AND claims.status <> 'draft'
           )`,
           customerCount: sql<number>`(
             SELECT COUNT(DISTINCT policies.user_id)::int FROM policies
@@ -82,46 +83,38 @@ export default async function OrganizationsPage() {
 
   const [agentOptions, assignments] = isAdmin
     ? await Promise.all([
-        db
-          .select({ id: user.id, name: user.name, email: user.email })
-          .from(user)
-          .where(or(eq(user.role, "agent"), eq(user.role, "head_agent")))
-          .orderBy(desc(user.createdAt)),
+        listPortalStaff().then((rows) => rows.filter((row) => row.role !== "admin" && !row.suspendedAt && !row.pendingRoleOperationId && row.emailVerified && !row.banned)),
         db
           .select({
             id: agentOrganizations.id,
             agentId: agentOrganizations.agentId,
-            agentName: user.name,
-            agentEmail: user.email,
             organizationId: agentOrganizations.organizationId,
             organizationName: organizations.name,
             organizationCode: organizations.code,
             createdAt: agentOrganizations.createdAt,
           })
           .from(agentOrganizations)
-          .innerJoin(user, eq(user.id, agentOrganizations.agentId))
           .innerJoin(
             organizations,
             eq(organizations.id, agentOrganizations.organizationId),
           )
-          .where(and(or(eq(user.role, "agent"), eq(user.role, "head_agent"))))
           .orderBy(desc(agentOrganizations.createdAt)),
       ])
     : [[], []];
 
-  const formattedAssignments = assignments.map((assignment) => ({
+  const formattedAssignments = (await hydrateAssignments(assignments)).map((assignment) => ({
     ...assignment,
     createdAt: assignment.createdAt.toISOString(),
   }));
 
   return (
-    <div className="min-h-[calc(100svh-3.5rem)] bg-muted/30">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+    <div className="min-h-[calc(100svh-4rem)] bg-background">
+      <div className="portal-page">
         <div className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+          <h1 className="portal-heading">
             Organizations
           </h1>
-          <p className="mt-1 text-muted-foreground">
+          <p className="portal-intro">
             {isAdmin
               ? "Manage insurers and assign agents or head agents across multiple organizations."
               : "View the organizations connected to your account."}
@@ -140,7 +133,7 @@ export default async function OrganizationsPage() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {orgRows.map((org) => (
-              <div key={org.id} className="rounded-lg border bg-card p-5">
+              <div key={org.id} className="portal-panel p-5 sm:p-6">
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1">
                     <h2 className="text-base font-semibold text-foreground">
@@ -150,22 +143,22 @@ export default async function OrganizationsPage() {
                       {org.code}
                     </p>
                   </div>
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+                  <div className="portal-icon">
                     <Building2 className="h-4 w-4 text-primary" />
                   </div>
                 </div>
                 <div className="mt-5 grid grid-cols-3 gap-2 text-sm">
-                  <div className="rounded-md border bg-background p-3">
+                  <div className="min-w-0 rounded-lg bg-muted/40 p-2 sm:p-3">
                     <Users className="mb-2 h-4 w-4 text-muted-foreground" />
                     <p className="font-semibold">{org.agentCount}</p>
                     <p className="text-xs text-muted-foreground">Staff</p>
                   </div>
-                  <div className="rounded-md border bg-background p-3">
+                  <div className="min-w-0 rounded-lg bg-muted/40 p-2 sm:p-3">
                     <FileText className="mb-2 h-4 w-4 text-muted-foreground" />
                     <p className="font-semibold">{org.claimCount}</p>
                     <p className="text-xs text-muted-foreground">Claims</p>
                   </div>
-                  <div className="rounded-md border bg-background p-3">
+                  <div className="min-w-0 rounded-lg bg-muted/40 p-2 sm:p-3">
                     <ShieldCheck className="mb-2 h-4 w-4 text-muted-foreground" />
                     <p className="font-semibold">{org.customerCount}</p>
                     <p className="text-xs text-muted-foreground">Customers</p>
@@ -179,4 +172,3 @@ export default async function OrganizationsPage() {
     </div>
   );
 }
-

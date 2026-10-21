@@ -1,11 +1,6 @@
-import { Suspense } from "react";
-import { ResetPasswordClient } from "./reset-password-client";
+import { redirect } from "next/navigation";
 
 export default function ResetPasswordPage() {
-  return (
-    <Suspense fallback={null}>
-      <ResetPasswordClient />
-    </Suspense>
-  );
+  // Password recovery is handled by Clerk's sign-in flow.
+  redirect("/sign-in");
 }
-

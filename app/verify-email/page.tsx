@@ -1,11 +1,9 @@
-import { Suspense } from "react";
-import { VerifyEmailClient } from "./verify-email-client";
+import { redirect } from "next/navigation";
+import { safeAuthContinuation } from "@/lib/auth-navigation";
 
-export default function VerifyEmailPage() {
-  return (
-    <Suspense fallback={null}>
-      <VerifyEmailClient />
-    </Suspense>
-  );
+export default async function VerifyEmailPage({ searchParams }: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const params = await searchParams;
+  redirect(`/auth/continue?next=${encodeURIComponent(safeAuthContinuation(params.next))}`);
 }
-

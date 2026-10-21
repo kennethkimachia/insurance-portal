@@ -1,12 +1,13 @@
 import { getSessionUser } from "@/lib/session";
 import { db } from "@/db";
-import { organizations, agentOrganizations, invitations, user } from "@/db/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { organizations, agentOrganizations } from "@/db/schema";
+import { eq, desc } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { ROUTES } from "@/lib/routes";
 import { DashboardLayoutClient } from "./layout-client";
 import { getActiveOrganizationId } from "@/lib/organization-access";
-import { acceptInvitationByToken } from "@/app/actions/admin/manage-agents";
+import { headers } from "next/headers";
+import { safeAuthContinuation } from "@/lib/auth-navigation";
 
 export default async function DashboardLayout({
   children,
@@ -16,43 +17,11 @@ export default async function DashboardLayout({
   const sessionUser = await getSessionUser();
 
   if (!sessionUser) {
-    redirect(ROUTES.SIGNIN);
+    const next = safeAuthContinuation((await headers()).get("x-portal-auth-continuation"));
+    redirect(`/auth/continue?next=${encodeURIComponent(next)}`);
   }
 
-  // Safety net: if user still has role "user" but has a pending invitation,
-  // accept it now (catches cases where sign-up invitation acceptance failed)
-  if (sessionUser.role === "user") {
-    const [pendingInvitation] = await db
-      .select({ token: invitations.token, role: invitations.role })
-      .from(invitations)
-      .where(
-        and(
-          eq(invitations.email, sessionUser.email.toLowerCase()),
-          eq(invitations.status, "pending")
-        )
-      )
-      .limit(1);
-
-    if (pendingInvitation) {
-      const result = await acceptInvitationByToken(
-        pendingInvitation.token,
-        sessionUser.email
-      );
-      if (result.success) {
-        // Redirect to the specific role-based dashboard to avoid
-        // re-entering this layout with a stale session that still shows role "user"
-        const roleDashboard: Record<string, string> = {
-          admin: ROUTES.DASHBOARD_ADMIN,
-          head_agent: ROUTES.DASHBOARD_HEAD_AGENT,
-          agent: ROUTES.DASHBOARD_AGENT,
-          user: ROUTES.DASHBOARD_USER,
-        };
-        const targetDashboard =
-          roleDashboard[pendingInvitation.role] || ROUTES.DASHBOARD_USER;
-        redirect(targetDashboard);
-      }
-    }
-  }
+  if (!sessionUser.emailVerified) redirect(ROUTES.VERIFY_EMAIL);
 
   // Fetch organizations based on role
   let orgs: { id: string; name: string; code: string }[] = [];
@@ -82,7 +51,7 @@ export default async function DashboardLayout({
       .from(organizations)
       .innerJoin(
         agentOrganizations,
-        eq(agentOrganizations.organizationId, organizations.id)
+        eq(agentOrganizations.organizationId, organizations.id),
       )
       .where(eq(agentOrganizations.agentId, sessionUser.id));
     orgs = agentOrgs;
@@ -106,6 +75,7 @@ export default async function DashboardLayout({
   const activeOrganizationId = await getActiveOrganizationId(sessionUser);
   return (
     <DashboardLayoutClient
+      key={`${sessionUser.id}:${activeOrganizationId ?? "none"}`}
       user={{
         name: sessionUser.name,
         email: sessionUser.email,

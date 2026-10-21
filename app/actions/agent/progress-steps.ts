@@ -1,204 +1,242 @@
 "use server";
 
+import { actionError } from "@/lib/action-errors";
+
 import { db } from "@/db";
-import { claimProgressSteps, claims } from "@/db/schema";
+import {
+  claimProgressSteps,
+  claims,
+  claimEvents,
+  claimNotifications,
+} from "@/db/schema";
 import { requireSession } from "@/lib/session";
-import { requirePermission, permissions } from "@/lib/permissions";
-import { eq, and, asc, sql, max } from "drizzle-orm";
+import { requireClaimAccess, lockClaimForMutation } from "@/lib/claim-access";
+import { closedClaimStatuses } from "@/lib/claim-workflow";
+import { eq, and, asc, sql } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 
-import { requireOrganizationAccess } from "@/lib/organization-access";
-import type { SessionUser } from "@/lib/session";
-
-async function requireClaimManagement(session: SessionUser, claimId: string) {
-  const [claim] = await db
-    .select({
-      organizationId: claims.organizationId,
-      assignedAgentId: claims.assignedAgentId,
-    })
-    .from(claims)
-    .where(eq(claims.id, claimId))
-    .limit(1);
-
-  if (!claim) throw new Error("Claim not found");
-  await requireOrganizationAccess(session, claim.organizationId);
-
-  if (session.role === "agent" && claim.assignedAgentId !== session.id) {
-    throw new Error("This claim is not assigned to you");
-  }
+const failure = (error: unknown) => ({
+  success: false as const,
+  error: actionError(error, "Unable to update this task"),
+});
+function requireOpen(status: string) {
+  if (
+    status === "draft" ||
+    closedClaimStatuses.some((closed) => closed === status)
+  )
+    throw new Error("Tasks can only be changed on open submitted claims");
 }
-
-// ── Get progress steps ─────────────────────────────────────────────────
+const serialize = (step: typeof claimProgressSteps.$inferSelect) => ({
+  ...step,
+  completedAt: step.completedAt?.toISOString() ?? null,
+  createdAt: step.createdAt.toISOString(),
+});
 
 export async function getProgressSteps(claimId: string) {
-  const session = await requireSession();
-  requirePermission(session.role, permissions.PROGRESS_READ);
-  await requireClaimManagement(session, claimId);
-
+  await requireClaimAccess(await requireSession(), claimId);
   const steps = await db
     .select()
     .from(claimProgressSteps)
     .where(eq(claimProgressSteps.claimId, claimId))
     .orderBy(asc(claimProgressSteps.stepOrder));
-
-  return steps.map((s) => ({
-    ...s,
-    completedAt: s.completedAt?.toISOString() ?? null,
-    createdAt: s.createdAt.toISOString(),
-  }));
+  return steps.map(serialize);
 }
-
-// ── Add a new progress step ────────────────────────────────────────────
 
 export async function addProgressStep(
   claimId: string,
   label: string,
-  description?: string
+  description?: string,
 ) {
-  const session = await requireSession();
-  requirePermission(session.role, permissions.PROGRESS_CREATE);
-
-  if (!label.trim()) {
-    return { success: false, error: "Step label is required" };
+  try {
+    const session = await requireSession();
+    const claim = await requireClaimAccess(session, claimId, "manage");
+    requireOpen(claim.status);
+    const title = label.trim();
+    const content = description?.trim() ?? "";
+    if (title.length < 3 || title.length > 100 || content.length > 2000)
+      throw new Error(
+        "Use a task title of 3–100 characters and a description of at most 2,000 characters",
+      );
+    const step = await db.transaction(async (tx) => {
+      await lockClaimForMutation(tx, session, claimId, claim.version);
+      const [changed] = await tx
+        .update(claims)
+        .set({ version: sql`${claims.version} + 1` })
+        .where(and(eq(claims.id, claimId), eq(claims.version, claim.version)))
+        .returning({ id: claims.id });
+      if (!changed)
+        throw new Error("This claim changed. Refresh and try again.");
+      const [max] = await tx
+        .select({
+          next: sql<number>`COALESCE(MAX(${claimProgressSteps.stepOrder}), 0) + 1`,
+        })
+        .from(claimProgressSteps)
+        .where(eq(claimProgressSteps.claimId, claimId));
+      const [created] = await tx
+        .insert(claimProgressSteps)
+        .values({
+          claimId,
+          stepOrder: max.next,
+          label: title,
+          description: content || null,
+          isSystem: false,
+        })
+        .returning();
+      await tx
+        .insert(claimEvents)
+        .values({
+          claimId,
+          actorId: session.id,
+          type: "task_created",
+          content: `Supporting task added: ${title}.`,
+          metadata: { stepId: created.id },
+        });
+      await tx
+        .insert(claimNotifications)
+        .values({
+          claimId,
+          userId: claim.policyholderId,
+          type: "task_update",
+          message: `A supporting task was added to ${claim.claimNumber}: ${title}.`,
+        });
+      return created;
+    });
+    revalidatePath(`/claims/${claimId}`);
+    return { success: true as const, step: serialize(step) };
+  } catch (error) {
+    return failure(error);
   }
-
-  await requireClaimManagement(session, claimId);
-  // Get the max step order for this claim
-  const [maxResult] = await db
-    .select({ maxOrder: sql<number>`COALESCE(MAX(${claimProgressSteps.stepOrder}), 0)` })
-    .from(claimProgressSteps)
-    .where(eq(claimProgressSteps.claimId, claimId));
-
-  const nextOrder = (maxResult?.maxOrder ?? 0) + 1;
-
-  const [step] = await db
-    .insert(claimProgressSteps)
-    .values({
-      claimId,
-      stepOrder: nextOrder,
-      label: label.trim(),
-      description: description?.trim() || null,
-    })
-    .returning();
-
-  return {
-    success: true,
-    step: {
-      ...step,
-      completedAt: step.completedAt?.toISOString() ?? null,
-      createdAt: step.createdAt.toISOString(),
-    },
-  };
 }
 
-// ── Complete a progress step ───────────────────────────────────────────
-
+async function changeStep(
+  stepId: string,
+  action: "complete" | "reopen" | "remove",
+) {
+  try {
+    const session = await requireSession();
+    const [step] = await db
+      .select()
+      .from(claimProgressSteps)
+      .where(eq(claimProgressSteps.id, stepId))
+      .limit(1);
+    if (!step) throw new Error("Task not found");
+    const claim = await requireClaimAccess(session, step.claimId, "manage");
+    requireOpen(claim.status);
+    if (step.isSystem)
+      throw new Error("Primary milestones are updated by the claim workflow");
+    if (action === "complete" && step.isCompleted)
+      throw new Error("This task is already complete");
+    if (action === "reopen" && !step.isCompleted)
+      throw new Error("This task is already open");
+    if (action === "remove" && step.isCompleted)
+      throw new Error("Completed tasks remain in claim history");
+    await db.transaction(async (tx) => {
+      await lockClaimForMutation(tx, session, claim.id, claim.version);
+      const [changed] = await tx
+        .update(claims)
+        .set({ version: sql`${claims.version} + 1` })
+        .where(and(eq(claims.id, claim.id), eq(claims.version, claim.version)))
+        .returning({ id: claims.id });
+      if (!changed)
+        throw new Error("This claim changed. Refresh and try again.");
+      if (action === "remove")
+        await tx
+          .delete(claimProgressSteps)
+          .where(eq(claimProgressSteps.id, stepId));
+      else
+        await tx
+          .update(claimProgressSteps)
+          .set({
+            isCompleted: action === "complete",
+            completedAt: action === "complete" ? new Date() : null,
+            completedBy: action === "complete" ? session.id : null,
+          })
+          .where(eq(claimProgressSteps.id, stepId));
+      await tx
+        .insert(claimEvents)
+        .values({
+          claimId: claim.id,
+          actorId: session.id,
+          type: `task_${action}`,
+          content: `Supporting task ${action === "complete" ? "completed" : action === "reopen" ? "reopened" : "removed"}: ${step.label}.`,
+          metadata: { stepId, previousCompleted: step.isCompleted },
+        });
+      await tx
+        .insert(claimNotifications)
+        .values({
+          claimId: claim.id,
+          userId: claim.policyholderId,
+          type: "task_update",
+          message: `Supporting task ${action === "complete" ? "completed" : action === "reopen" ? "reopened" : "removed"} on ${claim.claimNumber}: ${step.label}.`,
+        });
+    });
+    revalidatePath(`/claims/${claim.id}`);
+    return { success: true as const };
+  } catch (error) {
+    return failure(error);
+  }
+}
 export async function completeProgressStep(stepId: string) {
-  const session = await requireSession();
-  requirePermission(session.role, permissions.PROGRESS_UPDATE);
-
-  const [step] = await db
-    .select()
-    .from(claimProgressSteps)
-    .where(eq(claimProgressSteps.id, stepId))
-    .limit(1);
-
-  if (!step) return { success: false, error: "Step not found" };
-  if (step.isCompleted) return { success: false, error: "Step is already completed" };
-  await requireClaimManagement(session, step.claimId);
-
-  await db
-    .update(claimProgressSteps)
-    .set({
-      isCompleted: true,
-      completedAt: new Date(),
-      completedBy: session.id,
-    })
-    .where(eq(claimProgressSteps.id, stepId));
-
-  return { success: true };
+  return changeStep(stepId, "complete");
 }
-
-// ── Uncomplete a progress step ─────────────────────────────────────────
-
 export async function uncompleteProgressStep(stepId: string) {
-  const session = await requireSession();
-  requirePermission(session.role, permissions.PROGRESS_UPDATE);
-
-  const [step] = await db
-    .select({ claimId: claimProgressSteps.claimId })
-    .from(claimProgressSteps)
-    .where(eq(claimProgressSteps.id, stepId))
-    .limit(1);
-  if (!step) return { success: false, error: "Step not found" };
-  await requireClaimManagement(session, step.claimId);
-
-  await db
-    .update(claimProgressSteps)
-    .set({
-      isCompleted: false,
-      completedAt: null,
-      completedBy: null,
-    })
-    .where(eq(claimProgressSteps.id, stepId));
-
-  return { success: true };
+  return changeStep(stepId, "reopen");
 }
-
-// ── Remove a progress step ─────────────────────────────────────────────
-
 export async function removeProgressStep(stepId: string) {
-  const session = await requireSession();
-  requirePermission(session.role, permissions.PROGRESS_UPDATE);
-
-  const [step] = await db
-    .select()
-    .from(claimProgressSteps)
-    .where(eq(claimProgressSteps.id, stepId))
-    .limit(1);
-
-  if (!step) return { success: false, error: "Step not found" };
-  if (step.isCompleted) return { success: false, error: "Cannot remove a completed step" };
-  await requireClaimManagement(session, step.claimId);
-
-  await db
-    .delete(claimProgressSteps)
-    .where(eq(claimProgressSteps.id, stepId));
-
-  // Re-order remaining steps
-  const remaining = await db
-    .select({ id: claimProgressSteps.id })
-    .from(claimProgressSteps)
-    .where(eq(claimProgressSteps.claimId, step.claimId))
-    .orderBy(asc(claimProgressSteps.stepOrder));
-
-  for (let i = 0; i < remaining.length; i++) {
-    await db
-      .update(claimProgressSteps)
-      .set({ stepOrder: i + 1 })
-      .where(eq(claimProgressSteps.id, remaining[i].id));
-  }
-
-  return { success: true };
+  return changeStep(stepId, "remove");
 }
-
-// ── Reorder progress steps ─────────────────────────────────────────────
 
 export async function reorderProgressSteps(claimId: string, stepIds: string[]) {
-  const session = await requireSession();
-  requirePermission(session.role, permissions.PROGRESS_UPDATE);
-
-  await requireClaimManagement(session, claimId);
-  for (let i = 0; i < stepIds.length; i++) {
-    await db
-      .update(claimProgressSteps)
-      .set({ stepOrder: i + 1 })
-      .where(
-        and(
-          eq(claimProgressSteps.id, stepIds[i]),
-          eq(claimProgressSteps.claimId, claimId)
-        )
+  try {
+    const session = await requireSession();
+    const claim = await requireClaimAccess(session, claimId, "manage");
+    requireOpen(claim.status);
+    await db.transaction(async (tx) => {
+      await lockClaimForMutation(tx, session, claimId, claim.version);
+      const [changed] = await tx
+        .update(claims)
+        .set({ version: sql`${claims.version} + 1` })
+        .where(and(eq(claims.id, claimId), eq(claims.version, claim.version)))
+        .returning({ id: claims.id });
+      if (!changed)
+        throw new Error("This claim changed. Refresh and try again.");
+      const steps = await tx
+        .select()
+        .from(claimProgressSteps)
+        .where(eq(claimProgressSteps.claimId, claimId))
+        .orderBy(asc(claimProgressSteps.stepOrder));
+      const custom = steps.filter((step) => !step.isSystem);
+      if (
+        stepIds.length !== custom.length ||
+        new Set(stepIds).size !== stepIds.length ||
+        stepIds.some((id) => !custom.some((step) => step.id === id))
+      )
+        throw new Error(
+          "Provide each supporting task exactly once; primary milestones cannot be reordered",
+        );
+      const lastSystemOrder = Math.max(
+        0,
+        ...steps.filter((step) => step.isSystem).map((step) => step.stepOrder),
       );
+      for (const [index, id] of stepIds.entries())
+        await tx
+          .update(claimProgressSteps)
+          .set({ stepOrder: lastSystemOrder + index + 1 })
+          .where(eq(claimProgressSteps.id, id));
+      await tx
+        .insert(claimEvents)
+        .values({
+          claimId,
+          actorId: session.id,
+          type: "tasks_reordered",
+          visibility: "internal",
+          content: "Supporting tasks reordered.",
+          metadata: { stepIds },
+        });
+    });
+    revalidatePath(`/claims/${claimId}`);
+    return { success: true as const };
+  } catch (error) {
+    return failure(error);
   }
-
-  return { success: true };
 }

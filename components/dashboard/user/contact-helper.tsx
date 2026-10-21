@@ -23,8 +23,8 @@ export function ContactHelper({ agent }: ContactHelperProps) {
         <CardTitle className="text-lg">Your Agent</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="flex items-center gap-3 mb-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+        <div className="mb-5 flex items-center gap-3 rounded-xl bg-muted/25 p-3">
+          <div className="portal-icon">
             <UserCircle className="h-5 w-5 text-primary" />
           </div>
           <div>

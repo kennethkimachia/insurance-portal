@@ -14,7 +14,7 @@ export default async function HomePage() {
   const session = await getSessionUser();
 
   if (!session) {
-    redirect(ROUTES.SIGNIN);
+    redirect("/auth/continue");
   }
 
   redirect(roleDashboard[session.role] ?? ROUTES.DASHBOARD_USER);

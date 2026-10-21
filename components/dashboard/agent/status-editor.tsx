@@ -1,7 +1,16 @@
 "use client";
 
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -20,56 +29,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Circle,
-  UserCheck,
-  FileSearch,
-  ShieldCheck,
-  Banknote,
-  CheckCircle2,
-  Loader2,
-} from "lucide-react";
-import { useState, useTransition } from "react";
+import { Loader2 } from "lucide-react";
 import { updateClaimStatus } from "@/app/actions/agent/manage-claims";
-
-type ClaimStatus =
-  | "pending"
-  | "assigned"
-  | "surveyor_dispatched"
-  | "under_review"
-  | "assessment_complete"
-  | "approved"
-  | "settled"
-  | "rejected";
-
-const STEPS: {
-  key: ClaimStatus;
-  label: string;
-  icon: typeof Circle;
-}[] = [
-  { key: "pending", label: "Submitted", icon: Circle },
-  { key: "assigned", label: "Assigned", icon: UserCheck },
-  { key: "surveyor_dispatched", label: "Surveyor Dispatched", icon: FileSearch },
-  { key: "under_review", label: "Under Review", icon: FileSearch },
-  { key: "assessment_complete", label: "Assessment Done", icon: ShieldCheck },
-  { key: "approved", label: "Approved", icon: ShieldCheck },
-  { key: "settled", label: "Settled", icon: Banknote },
-];
-
-function getStepIndex(status: ClaimStatus): number {
-  const idx = STEPS.findIndex((s) => s.key === status);
-  return idx >= 0 ? idx : -1;
-}
-
-function getStatusLabel(status: ClaimStatus) {
-  if (status === "rejected") return "Rejected";
-  return STEPS.find((step) => step.key === status)?.label ?? status;
-}
+import {
+  availableTransitions,
+  requiresOutcomeReason,
+  statusLabels,
+  type ClaimStatus,
+} from "@/lib/claim-workflow";
+import type { Role } from "@/lib/permissions";
 
 interface StatusEditorProps {
   claimNumber: string;
   currentStatus: ClaimStatus;
   claimId?: string;
+  role?: Role;
   onStatusChange?: (newStatus: ClaimStatus, notification: string) => void;
 }
 
@@ -77,224 +51,232 @@ export function StatusEditor({
   claimNumber,
   currentStatus,
   claimId,
+  role = "agent",
   onStatusChange,
 }: StatusEditorProps) {
+  const router = useRouter();
   const [status, setStatus] = useState(currentStatus);
-  const [pendingStatus, setPendingStatus] = useState<ClaimStatus | null>(null);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [rejectOpen, setRejectOpen] = useState(false);
-  const [notification, setNotification] = useState<string | null>(null);
-  const [rejectionReason, setRejectionReason] = useState("");
+  const [next, setNext] = useState<ClaimStatus | "">("");
+  const [reason, setReason] = useState("");
+  const [source, setSource] = useState<"manual" | "simulated">("manual");
+  const [amount, setAmount] = useState("");
+  const [reference, setReference] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-  const currentIndex = getStepIndex(status);
-  const isRejected = status === "rejected";
+  const [saved, setSaved] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const transitions = availableTransitions(status, role);
+  const isOutcome = ["approved", "rejected", "withdrawn", "settled"].includes(
+    next,
+  );
+  const needsReason = !!next && requiresOutcomeReason(status, next);
 
-  function handleChange(newStatus: string) {
-    const selected = newStatus as ClaimStatus;
-    setError(null);
-
-    if (selected === "rejected") {
-      setStatus("rejected");
-      return;
-    }
-
-    if (selected === status) return;
-    setPendingStatus(selected);
-    setConfirmOpen(true);
-  }
-
-  function confirmStatusChange() {
-    if (!pendingStatus) return;
-    const nextStatus = pendingStatus;
-
-    if (claimId) {
-      startTransition(async () => {
-        const result = await updateClaimStatus(claimId, nextStatus);
+  function save() {
+    if (!claimId || !next) return;
+    startTransition(async () => {
+      try {
+        const result = await updateClaimStatus(
+          claimId,
+          next,
+          reason || undefined,
+          { source, settlementAmount: amount, settlementReference: reference },
+        );
         if (!result.success) {
-          setError(result.error ?? "Unable to update this claim");
+          setError(result.error ?? "Unable to update the claim");
           return;
         }
-        applyStatus(nextStatus);
-      });
-    } else {
-      applyStatus(nextStatus);
-    }
-  }
-
-  function applyStatus(nextStatus: ClaimStatus) {
-    setStatus(nextStatus);
-    setPendingStatus(null);
-    setConfirmOpen(false);
-    const msg = `Claim ${claimNumber} has been updated to "${getStatusLabel(nextStatus)}"`;
-    setNotification(msg);
-    onStatusChange?.(nextStatus, msg);
-    setTimeout(() => setNotification(null), 4000);
-  }
-
-  function submitRejection() {
-    if (!claimId) return;
-    startTransition(async () => {
-      const result = await updateClaimStatus(claimId, "rejected", rejectionReason);
-      if (!result.success) {
-        setError(result.error ?? "Unable to reject this claim");
-        return;
+        const message = `${claimNumber}: ${statusLabels[next]}`;
+        setStatus(next);
+        setNext("");
+        setReason("");
+        setError(null);
+        setSaved(message);
+        setConfirm(false);
+        onStatusChange?.(next, message);
+        router.refresh();
+      } catch {
+        setError("Unable to save. Your claim status has not been changed.");
       }
-      setStatus("rejected");
-      setRejectOpen(false);
-      setError(null);
-      const msg = `Claim ${claimNumber} was rejected with a reason supplied to the policyholder.`;
-      setNotification(msg);
-      onStatusChange?.("rejected", msg);
-      setTimeout(() => setNotification(null), 4000);
     });
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">Update Claim Status</CardTitle>
+        <CardTitle className="text-lg">Claim status</CardTitle>
+        <CardDescription>
+          {claimNumber} · {statusLabels[status]}
+        </CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-sm text-muted-foreground">Claim</span>
-            <span className="font-mono text-sm font-semibold text-foreground">
-              {claimNumber}
-            </span>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">Move to stage</label>
-            <Select value={status} onValueChange={handleChange} disabled={isPending}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
+      <CardContent className="space-y-4">
+        {status === "pending" && (
+          <p className="text-sm text-muted-foreground">
+            A claims manager assigns the claim before the agent begins review.
+          </p>
+        )}
+        {status === "awaiting_information" && (
+          <p className="text-sm text-muted-foreground">
+            Complete the information requests to resume review. Record why any
+            unavailable evidence can be waived.
+          </p>
+        )}
+        {!claimId ? (
+          <p className="text-sm text-muted-foreground">
+            Select a saved claim to update its status.
+          </p>
+        ) : transitions.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            There are no status changes available at this stage.
+          </p>
+        ) : (
+          <>
+            <label htmlFor="next-status" className="block text-sm font-medium">
+              Next stage
+            </label>
+            <Select
+              value={next}
+              onValueChange={(value) => {
+                setNext(value as ClaimStatus);
+                setError(null);
+                setSaved(null);
+              }}
+              disabled={pending}
+            >
+              <SelectTrigger id="next-status">
+                <SelectValue placeholder="Choose a permitted stage" />
               </SelectTrigger>
               <SelectContent>
-                {STEPS.map((step) => (
-                  <SelectItem key={step.key} value={step.key}>
-                    {step.label}
+                {transitions.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {statusLabels[value]}
                   </SelectItem>
                 ))}
-                <SelectItem value="rejected">Rejected</SelectItem>
               </SelectContent>
             </Select>
-            {error && <p className="text-xs text-destructive">{error}</p>}
-          </div>
-
-          {!isRejected && (
-            <>
-              <div className="relative mt-2">
-                <div className="h-2.5 w-full rounded-full bg-muted">
-                  <div
-                    className="h-2.5 rounded-full bg-primary transition-all duration-500 ease-in-out"
-                    style={{ width: `${((currentIndex + 1) / STEPS.length) * 100}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-7 gap-1">
-                {STEPS.map((step, i) => {
-                  const isCompleted = i <= currentIndex;
-                  const isCurrent = i === currentIndex;
-                  const StepIcon = isCompleted ? CheckCircle2 : step.icon;
-
-                  return (
-                    <div key={step.key} className="flex min-w-0 flex-col items-center text-center">
-                      <div
-                        className={`flex h-7 w-7 items-center justify-center rounded-full transition-all ${
-                          isCurrent
-                            ? "bg-primary text-primary-foreground ring-3 ring-primary/20"
-                            : isCompleted
-                              ? "bg-primary/10 text-primary"
-                              : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        <StepIcon className="h-3.5 w-3.5" />
-                      </div>
-                      <span
-                        className={`mt-1 max-w-full text-[10px] leading-tight ${
-                          isCurrent
-                            ? "font-semibold text-foreground"
-                            : isCompleted
-                              ? "font-medium text-foreground"
-                              : "text-muted-foreground"
-                        }`}
-                      >
-                        {step.label}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-
-          {isRejected && (
-            <div className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
-              <div>
-                <p className="text-sm font-medium text-destructive">Rejection reason</p>
+            {next && (
+              <>
+                <label
+                  htmlFor="outcome-reason"
+                  className="block text-sm font-medium"
+                >
+                  {needsReason
+                    ? "Explanation for the policyholder"
+                    : "Update details (optional)"}
+                </label>
+                <Textarea
+                  id="outcome-reason"
+                  value={reason}
+                  onChange={(event) => setReason(event.target.value)}
+                  maxLength={4000}
+                  placeholder="Explain what has changed and what happens next."
+                />
+              </>
+            )}
+            {isOutcome && (
+              <>
+                <label
+                  htmlFor="outcome-source"
+                  className="block text-sm font-medium"
+                >
+                  Outcome source
+                </label>
+                <Select
+                  value={source}
+                  onValueChange={(value) =>
+                    setSource(value as "manual" | "simulated")
+                  }
+                >
+                  <SelectTrigger id="outcome-source">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manual">Manually recorded</SelectItem>
+                    <SelectItem value="simulated">
+                      Simulated for demonstration
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
                 <p className="text-xs text-muted-foreground">
-                  This explanation will be shown to the policyholder.
+                  The source and explanation will appear in the
+                  policyholder&apos;s history.
                 </p>
+              </>
+            )}
+            {next === "settled" && (
+              <div className="space-y-3 rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">
+                  Record an amount and payment evidence reference. A simulated
+                  settlement is labeled in the portal.
+                </p>
+                <label
+                  htmlFor="settlement-amount"
+                  className="block text-sm font-medium"
+                >
+                  Amount (KES)
+                </label>
+                <Input
+                  id="settlement-amount"
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(event) => setAmount(event.target.value)}
+                  placeholder="0.00"
+                />
+                <label
+                  htmlFor="settlement-reference"
+                  className="block text-sm font-medium"
+                >
+                  Payment or simulation reference
+                </label>
+                <Input
+                  id="settlement-reference"
+                  value={reference}
+                  maxLength={100}
+                  onChange={(event) => setReference(event.target.value)}
+                />
               </div>
-              <Textarea
-                value={rejectionReason}
-                onChange={(event) => setRejectionReason(event.target.value)}
-                placeholder="Explain why this claim cannot be accepted..."
-                rows={4}
-              />
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={isPending || rejectionReason.trim().length < 10}
-                onClick={() => setRejectOpen(true)}
-              >
-                Reject Claim
-              </Button>
-            </div>
-          )}
-
-          {notification && (
-            <div className="animate-in slide-in-from-bottom-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
-              <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
-                Notification created
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">{notification}</p>
-            </div>
-          )}
-        </div>
+            )}
+            <Button
+              disabled={
+                pending ||
+                !next ||
+                (needsReason && reason.trim().length < 10) ||
+                (next === "settled" && (!amount || reference.trim().length < 3))
+              }
+              onClick={() => setConfirm(true)}
+            >
+              {pending && <Loader2 className="h-4 w-4 animate-spin" />}Save
+              status
+            </Button>
+          </>
+        )}
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        {saved && (
+          <p
+            role="status"
+            className="text-sm text-emerald-700 dark:text-emerald-400"
+          >
+            {saved}. Update saved.
+          </p>
+        )}
       </CardContent>
-
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent size="sm">
+      <AlertDialog open={confirm} onOpenChange={setConfirm}>
+        <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirm status change</AlertDialogTitle>
+            <AlertDialogTitle>Confirm status update</AlertDialogTitle>
             <AlertDialogDescription>
-              Move claim {claimNumber} from {getStatusLabel(status)} to {pendingStatus ? getStatusLabel(pendingStatus) : "the selected stage"}?
+              Move {claimNumber} from {statusLabels[status]} to{" "}
+              {next ? statusLabels[next] : "the selected stage"}? The update
+              will be recorded and the policyholder notified.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmStatusChange} disabled={isPending}>
-              {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={rejectOpen} onOpenChange={setRejectOpen}>
-        <AlertDialogContent size="sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Reject this claim?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will reject claim {claimNumber} and send the reason to the policyholder.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={submitRejection} disabled={isPending} variant="destructive">
-              {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Reject claim"}
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={pending} onClick={save}>
+              Confirm
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

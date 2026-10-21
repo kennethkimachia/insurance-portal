@@ -1,6 +1,5 @@
 import {
   S3Client,
-  PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
@@ -18,24 +17,6 @@ const s3 = new S3Client({
 });
 
 const BUCKET = process.env.B2_BUCKET_NAME!;
-
-/**
- * Generate a presigned URL for uploading a file directly from the client.
- * The client will PUT the file to this URL.
- */
-export async function getUploadUrl(
-  key: string,
-  contentType: string,
-  expiresIn = 3600
-) {
-  const command = new PutObjectCommand({
-    Bucket: BUCKET,
-    Key: key,
-    ContentType: contentType,
-  });
-
-  return getSignedUrl(s3, command, { expiresIn });
-}
 
 /**
  * Generate a presigned URL for downloading / viewing a file.
@@ -80,7 +61,7 @@ import path from "path";
 export function buildClaimFileKey(
   orgId: string,
   claimId: string,
-  originalFilename: string
+  originalFilename: string,
 ) {
   const ext = path.extname(originalFilename) || "";
   return `${orgId}/claims/${claimId}/${randomUUID()}${ext}`;

@@ -1,8 +1,8 @@
-import { and, eq } from 'drizzle-orm';
-import { db } from '@/db';
-import { claimAttachments, claims, policies } from '@/db/schema';
-import { canAccessOrganization } from '@/lib/organization-access';
-import type { SessionUser } from '@/lib/session';
+import { and, eq } from "drizzle-orm";
+import { db } from "@/db";
+import { claimAttachments } from "@/db/schema";
+import { requireClaimAccess } from "./claim-access";
+import type { SessionUser } from "./session";
 
 export class ClaimAttachmentAccessError extends Error {
   constructor(
@@ -18,18 +18,18 @@ export async function getAuthorizedClaimAttachment(
   claimId: string,
   attachmentId: string,
 ) {
+  let claim;
+  try {
+    claim = await requireClaimAccess(session, claimId);
+  } catch {
+    throw new ClaimAttachmentAccessError(
+      "Attachment not found or access denied",
+      404,
+    );
+  }
   const [attachment] = await db
-    .select({
-      storageKey: claimAttachments.storageKey,
-      originalFilename: claimAttachments.originalFilename,
-      contentType: claimAttachments.contentType,
-      organizationId: claims.organizationId,
-      assignedAgentId: claims.assignedAgentId,
-      policyholderId: policies.userId,
-    })
+    .select()
     .from(claimAttachments)
-    .innerJoin(claims, eq(claims.id, claimAttachments.claimId))
-    .innerJoin(policies, eq(policies.id, claims.policyId))
     .where(
       and(
         eq(claimAttachments.id, attachmentId),
@@ -37,34 +37,28 @@ export async function getAuthorizedClaimAttachment(
       ),
     )
     .limit(1);
-
-  if (!attachment) {
-    throw new ClaimAttachmentAccessError('Attachment not found', 404);
-  }
-
-  const isPolicyholder =
-    session.role === 'user' && attachment.policyholderId === session.id;
-  const isAssignedAgent =
-    session.role === 'agent' &&
-    attachment.assignedAgentId === session.id &&
-    (await canAccessOrganization(session, attachment.organizationId));
-  const isOrganizationManager =
-    (session.role === 'head_agent' || session.role === 'admin') &&
-    (await canAccessOrganization(session, attachment.organizationId));
-
-  if (!isPolicyholder && !isAssignedAgent && !isOrganizationManager) {
-    throw new ClaimAttachmentAccessError('Forbidden', 403);
-  }
-
-  const expectedKeyPrefix =
-    attachment.organizationId + '/claims/' + claimId + '/';
-  if (!attachment.storageKey.startsWith(expectedKeyPrefix)) {
-    console.error('Attachment storage key does not match its claim', {
-      claimId,
-      attachmentId,
-    });
-    throw new ClaimAttachmentAccessError('Attachment unavailable', 500);
-  }
-
+  if (!attachment)
+    throw new ClaimAttachmentAccessError("Attachment not found", 404);
+  if (attachment.uploadState !== "ready")
+    throw new ClaimAttachmentAccessError(
+      "Document upload is incomplete. Retry the original file.",
+      403,
+    );
+  if (
+    attachment.scanState === "rejected" ||
+    (session.role === "user" && attachment.scanState !== "clean")
+  )
+    throw new ClaimAttachmentAccessError(
+      "Document is awaiting review or needs replacement",
+      403,
+    );
+  // Staff may download pending files for explicit manual inspection. Downloads are
+  // always attachment/octet-stream and never embedded as active browser content.
+  if (
+    !attachment.storageKey.startsWith(
+      `${claim.organizationId}/claims/${claimId}/`,
+    )
+  )
+    throw new ClaimAttachmentAccessError("Attachment unavailable", 500);
   return attachment;
 }

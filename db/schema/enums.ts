@@ -7,12 +7,10 @@ export const userRoleEnum = pgEnum("user_role", [
   "user",
 ]);
 
-export const policyTypeEnum = pgEnum("policy_type", [
-  "motor",
-  "burglary",
-]);
+export const policyTypeEnum = pgEnum("policy_type", ["motor", "burglary"]);
 
 export const claimStatusEnum = pgEnum("claim_status", [
+  "draft",
   "pending",
   "assigned",
   "surveyor_dispatched",
@@ -21,6 +19,8 @@ export const claimStatusEnum = pgEnum("claim_status", [
   "approved",
   "settled",
   "rejected",
+  "awaiting_information",
+  "withdrawn",
 ]);
 
 export const invitationStatusEnum = pgEnum("invitation_status", [

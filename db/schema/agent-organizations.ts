@@ -1,5 +1,5 @@
 import { pgTable, uuid, timestamp, unique } from "drizzle-orm/pg-core";
-import { user } from "./auth";
+import { portalActors } from "./portal-actors";
 import { organizations } from "./organizations";
 
 export const agentOrganizations = pgTable(
@@ -8,7 +8,7 @@ export const agentOrganizations = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     agentId: uuid("agent_id")
       .notNull()
-      .references(() => user.id),
+      .references(() => portalActors.id),
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id),
