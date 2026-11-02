@@ -165,3 +165,24 @@ test("invalid files fail locally without sending a request or losing their retry
   assert.equal(updates[0].status, "failed");
   assert.match(updates[0].error!, /not an accepted file/);
 });
+
+test("HTTP 200 without a confirmed attachment is never treated as a successful upload", async () => {
+  const original = globalThis.XMLHttpRequest;
+  const file = new File(["%PDF-1.7"], "report.pdf", { type: "application/pdf" });
+  try {
+    for (const body of ["<html>sign in</html>", "{}", '{"success":true}', '{"success":false,"attachmentId":"id"}', '{"success":true,"attachmentId":""}']) {
+      class IncompleteResponse {
+        upload = {}; status = 200; responseText = body; timeout = 0; onload?: () => void;
+        open() {} send() { queueMicrotask(() => this.onload?.()); }
+      }
+      globalThis.XMLHttpRequest = IncompleteResponse as unknown as typeof XMLHttpRequest;
+      const updates: UploadProgress[] = [];
+      const result = await uploadClaimDocuments(crypto.randomUUID(), crypto.randomUUID(), {
+        other: [{ id: crypto.randomUUID(), name: file.name, size: file.size, type: file.type, file }],
+      }, { onProgress: (u) => updates.push(u) });
+      assert.equal(result.uploaded, 0);
+      assert.equal(result.failed, 1);
+      assert.equal(updates.at(-1)?.status, "failed");
+    }
+  } finally { globalThis.XMLHttpRequest = original; }
+});

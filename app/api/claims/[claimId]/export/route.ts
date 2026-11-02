@@ -29,6 +29,8 @@ export async function GET(
       amendments: data.events.filter(
         (e) => e.type === "amendment" && e.visibility === "public",
       ),
+      progressUpdates: data.events.filter((e) => e.type === "progress_update" && e.visibility === "public"),
+      supportingTasks: data.progress.filter((step) => !step.isSystem),
       evidence: data.documents,
       requests: data.requests,
       handoff: {

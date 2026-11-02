@@ -1,5 +1,10 @@
 # Clerk identity cutover and manual steps
 
+> Historical cutover notes (5 October 2026). The [current Clerk setup](clerk-authentication.md)
+> and [onboarding report](onboarding-review-and-changes.md) supersede public signup,
+> email, bootstrap, and validation statements here. Invite-only access mode and
+> the invitation schema upgrade are now required.
+
 Source implementation is ready. The database has not been migrated or written to
 by this implementation task. This version requires the new tables and foreign
 keys, so complete the database cutover before testing signed-in portal logic.
@@ -20,7 +25,7 @@ Development instance: `ins_3KGUiMbWv0BjGy45X1IOOZr4jGf`.
 
 The CLI supports both session configuration and user metadata through
 `clerk config patch` and `clerk api /users/<id>/metadata -X PATCH --file ...`.
-**No mandatory Clerk Dashboard changes remain for this development architecture.**
+**Current setup requires Clerk Invite-only access mode; see the current setup notes.**
 Do not create a webhook or configure a webhook signing secret.
 
 ## Database cutover: operator task
@@ -191,7 +196,7 @@ and synthetic tests do not prove live transactional behavior.
 
 ## Clerk Dashboard tasks that the CLI cannot perform
 
-**None are required for the current development setup.** The administrator role
+**Set Clerk Access mode to Invite-only for the current implementation.** The administrator role
 and custom claim were configured through the CLI. Existing-user role and UUID
 mapping backfill also has a CLI helper once you review the identity mapping.
 

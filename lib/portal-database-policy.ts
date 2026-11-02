@@ -18,11 +18,11 @@ export function portalDatabaseFailure(error: unknown): PortalDatabaseFailure {
 }
 
 export function portalTablesAvailability(tables: {
-  actors: boolean; enrollments: boolean; roleOperations: boolean;
+  actors: boolean; enrollments: boolean; roleOperations: boolean; invitationProvider: boolean;
 } | undefined): PortalDatabaseAvailability {
-  if (!tables || [tables.actors, tables.enrollments, tables.roleOperations].some((value) => typeof value !== "boolean"))
+  if (!tables || [tables.actors, tables.enrollments, tables.roleOperations, tables.invitationProvider].some((value) => typeof value !== "boolean"))
     return "unavailable";
-  return tables.actors && tables.enrollments && tables.roleOperations ? "ready" : "setup-required";
+  return tables.actors && tables.enrollments && tables.roleOperations && tables.invitationProvider ? "ready" : "setup-required";
 }
 
 /** Skip all actor reads when cutover is incomplete; fail closed on query errors. */

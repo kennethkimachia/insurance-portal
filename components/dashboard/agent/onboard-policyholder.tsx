@@ -21,7 +21,7 @@ const emptyForm = {
   email: "",
   phone: "",
   policyType: "motor",
-  source: "demo",
+  source: "manual",
   insurerReference: "",
   coverageStart: "",
   coverageEnd: "",
@@ -51,6 +51,8 @@ function PolicyholderEnrollment({
   organizationId?: string;
 }) {
   const [form, setForm] = useState(emptyForm);
+  const [policyConfirmed, setPolicyConfirmed] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[] | undefined>>({});
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [invites, setInvites] = useState<InvitationSummary[]>([]);
@@ -87,6 +89,7 @@ function PolicyholderEnrollment({
     event.preventDefault();
     setError("");
     setMessage("");
+    setFieldErrors({});
     if (!organizationId) {
       setError(
         "An organization membership is required. Ask your administrator to configure access.",
@@ -98,15 +101,18 @@ function PolicyholderEnrollment({
         const data = new FormData();
         Object.entries(form).forEach(([key, value]) => data.set(key, value));
         data.set("organizationId", organizationId);
+        data.set("policyConfirmed", String(policyConfirmed));
         const result = await onboardPolicyholder(data);
         if (!result.success) {
           setError(result.error);
+          if ("fieldErrors" in result) setFieldErrors(result.fieldErrors ?? {});
           return;
         }
         setMessage(
           `${result.policyholderName}: ${result.message} The policy becomes available after verified invitation acceptance.`,
         );
         setForm(emptyForm);
+        setPolicyConfirmed(false);
         await reloadInvitations();
       } catch {
         setError("Could not save the invitation. Please retry.");
@@ -126,13 +132,17 @@ function PolicyholderEnrollment({
         type={type}
         required={required}
         value={form[key]}
-        onChange={(event) =>
-          setForm((value) => ({ ...value, [key]: event.target.value }))
-        }
+        aria-invalid={!!fieldErrors[key]}
+        aria-describedby={fieldErrors[key] ? `enroll-${key}-error` : undefined}
+        onChange={(event) => {
+          setForm((value) => ({ ...value, [key]: event.target.value }));
+          setPolicyConfirmed(false);
+        }}
         maxLength={
           key === "coverageSummary" ? 2000 : key === "insuredAsset" ? 500 : 255
         }
       />
+      {fieldErrors[key] && <p id={`enroll-${key}-error`} className="text-xs text-destructive">{fieldErrors[key]?.join(" ")}</p>}
     </div>
   );
   return (
@@ -157,12 +167,13 @@ function PolicyholderEnrollment({
                 <select
                   id="enroll-policyType"
                   value={form.policyType}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    setPolicyConfirmed(false);
                     setForm((value) => ({
                       ...value,
                       policyType: event.target.value,
-                    }))
-                  }
+                    }));
+                  }}
                   className="h-9 rounded-lg border bg-background px-3 text-sm"
                 >
                   <option value="motor">Motor</option>
@@ -175,9 +186,10 @@ function PolicyholderEnrollment({
               <select
                 id="enroll-source"
                 value={form.source}
-                onChange={(event) =>
-                  setForm((value) => ({ ...value, source: event.target.value }))
-                }
+                onChange={(event) => {
+                  setPolicyConfirmed(false);
+                  setForm((value) => ({ ...value, source: event.target.value }));
+                }}
                 className="h-9 rounded-lg border bg-background px-3 text-sm"
               >
                 <option value="demo">
@@ -186,12 +198,12 @@ function PolicyholderEnrollment({
                 <option value="manual">Manually recorded insurer policy</option>
               </select>
               <p className="text-xs text-muted-foreground">
-                A portal policy record does not verify insurer coverage.
+                Record an existing insurer policy for real onboarding. Choose demonstration only for synthetic data. A portal record does not issue insurance or verify claim coverage.
               </p>
             </div>
             {field(
               "insurerReference",
-              "Insurer policy reference",
+              "Existing insurer policy number",
               "text",
               form.source === "manual",
             )}
@@ -216,6 +228,10 @@ function PolicyholderEnrollment({
                 : "Insured premises (address and description)",
             )}
             {field("coverageSummary", "Coverage summary (manually recorded)")}
+            <label className="flex items-start gap-3 rounded-lg border p-3 text-sm">
+              <input type="checkbox" required checked={policyConfirmed} onChange={(event) => setPolicyConfirmed(event.target.checked)} className="mt-1" />
+              <span>{form.source === "manual" ? "I checked the existing insurer policy, its named holder, email address, insured asset and coverage dates against the insurer's records." : "I confirm this invitation uses synthetic policyholder and policy details for demonstration."}</span>
+            </label>
             <p className="text-xs text-muted-foreground">
               The portal stores the invited contact details and policy after
               acceptance. No ID document is needed for account activation. Use
@@ -234,7 +250,7 @@ function PolicyholderEnrollment({
                 {message}
               </p>
             )}
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending || !policyConfirmed}>
               {pending
                 ? "Saving invitation…"
                 : "Create policyholder invitation"}

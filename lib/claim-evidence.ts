@@ -82,9 +82,9 @@ export function validateEvidenceSelection(
 ): string | null {
   if (!EVIDENCE_CATEGORIES.includes(category as EvidenceCategory))
     return "Choose a supported document category";
-  if (!file.name.trim() || file.name.length > 255)
-    return "Use a filename of 1 to 255 characters";
-  if (file.size <= 0) return `${file.name} is empty`;
+  if (!file.name.trim() || file.name.length > 255 || /[\u0000-\u001f\u007f\\/]/.test(file.name))
+    return "Use a filename of 1 to 255 characters without paths or control characters";
+  if (!Number.isSafeInteger(file.size) || file.size <= 0) return `${file.name} is empty`;
   if (file.size > MAX_FILE_BYTES) return `${file.name} exceeds 50 MB`;
   const extension = file.name.toLowerCase().split(".").pop() ?? "";
   if (!evidenceAccept(category).split(",").includes(`.${extension}`))

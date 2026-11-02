@@ -1,3 +1,8 @@
+> Historical review of an earlier implementation. Authentication/email findings
+> below are retained as history, not current setup instructions. See the
+> [current onboarding report](onboarding-review-and-changes.md) and
+> [Clerk setup](clerk-authentication.md).
+
 **Insurance claims portal: prototype review and completion proposal**
 
 Reviewed on 3 October 2026. Scope: the current portal, with **Motor and Burglary only**, agent-led policyholder invitations, and manual portal workflows while insurer integration remains deferred.

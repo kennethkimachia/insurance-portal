@@ -11,6 +11,7 @@ import { desc, eq, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Mail, ShieldCheck, UserRound } from "lucide-react";
+import { OnboardPolicyholder } from "@/components/dashboard/agent/onboard-policyholder";
 
 export default async function CustomersPage() {
   const session = await requireSession();
@@ -63,6 +64,10 @@ export default async function CustomersPage() {
           <p className="portal-intro">
             Policyholder profiles for the active organization.
           </p>
+        </div>
+
+        <div className="mb-8">
+          <OnboardPolicyholder organizationId={organizationId} />
         </div>
 
         {customers.length === 0 ? (

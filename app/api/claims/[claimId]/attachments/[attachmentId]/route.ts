@@ -5,6 +5,7 @@ import {
 } from "@/lib/claim-attachment-access";
 import { getSessionUser } from "@/lib/session";
 import { getFileUrl } from "@/lib/storage";
+import { StorageConfigurationError } from "@/lib/storage-policy";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +63,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     response.headers.set("Cache-Control", "private, no-store");
     return response;
   } catch (error) {
+    if (error instanceof StorageConfigurationError)
+      return NextResponse.json({ error: error.message }, { status: 503 });
     if (error instanceof ClaimAttachmentAccessError) {
       return NextResponse.json(
         { error: error.message },
@@ -72,7 +75,6 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     console.error("Could not create attachment view URL", {
       claimId,
       attachmentId,
-      error,
     });
     return NextResponse.json(
       { error: "Attachment unavailable" },

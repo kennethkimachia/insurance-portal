@@ -1,0 +1,51 @@
+# Development dependencies only; Next.js runs on the host for hot reload.
+name: insurance-portal-local
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: portal
+      POSTGRES_PASSWORD: portal_local_password
+      POSTGRES_DB: insurance_portal
+      TZ: UTC
+    ports:
+      - "127.0.0.1:${LOCAL_POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U portal -d insurance_portal"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  storage:
+    image: chrislusf/seaweedfs:4.51
+    command:
+      - mini
+      - -dir=/data
+      - -ip=127.0.0.1
+      - -ip.bind=0.0.0.0
+      - -s3.port=8333
+      - -webdav=false
+      - -admin.ui=false
+    environment:
+      # Configured credentials enable S3 authentication; no anonymous identity.
+      AWS_ACCESS_KEY_ID: ${B2_KEY_ID:-portal-local}
+      AWS_SECRET_ACCESS_KEY: ${B2_APP_KEY:-portal-local-secret}
+      S3_BUCKET: ${B2_BUCKET_NAME:-portal-evidence-local}
+    ports:
+      - "127.0.0.1:${LOCAL_S3_PORT:-8333}:8333"
+    volumes:
+      - storage-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9333/cluster/status"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+volumes:
+  postgres-data:
+  storage-data:

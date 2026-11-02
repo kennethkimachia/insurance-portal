@@ -13,7 +13,8 @@ export default async function SignInPage({ searchParams }: {
   if ((await auth()).userId) redirect(continuation);
   return (
     <AuthShell title="Welcome back" description="Sign in to manage your policies and claims.">
-      <SignIn routing="path" path="/sign-in" signUpUrl={`/sign-up?next=${encodeURIComponent(next)}`} forceRedirectUrl={continuation} appearance={{ elements: { rootBox: "w-full", cardBox: "w-full", card: "shadow-none border-0" } }} />
+      <SignIn routing="path" path="/sign-in" withSignUp={false} transferable={false} forceRedirectUrl={continuation} appearance={{ elements: { rootBox: "w-full", cardBox: "w-full", card: "shadow-none border-0", footerAction: { display: "none" } } }} />
+      <p className="mt-4 text-sm text-muted-foreground">Access is by invitation. New policyholders and staff should open their Clerk invitation email to activate their account.</p>
     </AuthShell>
   );
 }

@@ -8,7 +8,13 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit --incremental false",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "local:setup": "tsx scripts/local.ts setup",
+    "local:up": "tsx scripts/local.ts up",
+    "local:dev": "tsx scripts/local.ts dev",
+    "local:db:push": "tsx scripts/local.ts db:push",
+    "local:check": "tsx scripts/local.ts check",
+    "local:down": "tsx scripts/local.ts down"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.992.0",
@@ -23,7 +29,6 @@
     "drizzle-orm": "^0.45.1",
     "drizzle-zod": "^0.8.3",
     "lucide-react": "^0.574.0",
-    "mailtrap": "^4.4.0",
     "next": "16.1.6",
     "next-themes": "^0.4.6",
     "pg": "^8.18.0",

@@ -7,10 +7,11 @@ import {
   policyholderEnrollments,
   policies,
   auditEvents,
+  agentOrganizations,
 } from "@/db/schema";
-import { and, desc, eq, gt, isNull } from "drizzle-orm";
-import { sendEmail } from "@/lib/email";
-import { getInviteEmailHtml } from "@/lib/emailTemplates";
+import { and, desc, eq, gt, isNull, ne, sql } from "drizzle-orm";
+import { clerkClient } from "@clerk/nextjs/server";
+import { sendClerkInvitation, revokeClerkInvitation } from "@/lib/clerk-invitation-policy";
 import {
   createInvitationToken,
   hashInvitationToken,
@@ -18,6 +19,8 @@ import {
   invitationState,
   isInvitationToken,
   normalizeEmail,
+  invitationConflict,
+  createPortalPolicyNumber,
 } from "@/lib/invitation-policy";
 import type { Role } from "@/lib/permissions";
 import type { SessionUser } from "@/lib/session";
@@ -38,55 +41,77 @@ export type InvitationSummary = {
   deliveryError: string | null;
   policyType: "motor" | "burglary" | null;
   policyNumber: string | null;
+  lastSentAt: string | null;
+  acceptedAt: string | null;
 };
 
 export async function deliverInvitation(invitation: Invitation, token: string) {
-  const baseURL =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    "http://localhost:3000";
-  const link = `${baseURL.replace(/\/$/, "")}/invitations/${token}`;
-  const displayRole =
-    invitation.purpose === "policyholder"
-      ? "Policyholder"
-      : {
-          admin: "Platform administrator",
-          head_agent: "Claims manager",
-          agent: "Agent",
-          user: "Policyholder",
-        }[invitation.role];
-  const result = await sendEmail({
-    to: invitation.email,
-    subject: `Your Insurance Portal ${displayRole.toLowerCase()} invitation`,
-    html: getInviteEmailHtml(displayRole, link),
-    text: `Accept your Insurance Portal invitation: ${link}. This link expires in seven days.`,
-    category: "invitation",
-  });
-  const deliveryState = result.success
-    ? result.mode === "sandbox"
-      ? "sandbox"
-      : "sent"
-    : "failed";
-  await db
-    .update(invitations)
-    .set({
+  return db.transaction(async (tx) => {
+    const [record] = await tx.select().from(invitations)
+      .where(and(eq(invitations.id, invitation.id), eq(invitations.token, hashInvitationToken(token))))
+      .for("update");
+    if (!record || invitationState(record) !== "pending")
+      throw new Error("This invitation changed. Refresh the invitations list.");
+    let clerkInvitationId = record.clerkInvitationId;
+    let deliveryState: "sent" | "failed" = "failed";
+    let deliveryError: string | null = null;
+    try {
+      const client = (await clerkClient()).invitations;
+      await revokeClerkInvitation(client, clerkInvitationId);
+      const created = await sendClerkInvitation(client, {
+        id: record.id, email: record.email, token, expiresAt: record.expiresAt,
+        baseURL: process.env.NEXT_PUBLIC_APP_URL,
+      });
+      clerkInvitationId = created.id;
+      deliveryState = "sent";
+    } catch {
+      deliveryError = "Clerk could not send this invitation. Check the Clerk email and instance configuration, then retry delivery.";
+    }
+    await tx.update(invitations).set({ clerkInvitationId, deliveryState, deliveryError, lastSentAt: new Date() })
+      .where(eq(invitations.id, record.id));
+    return {
       deliveryState,
-      deliveryError: result.success ? null : result.error,
-      lastSentAt: new Date(),
-    })
-    .where(
-      and(
-        eq(invitations.id, invitation.id),
-        eq(invitations.token, hashInvitationToken(token)),
-      ),
-    );
-  return {
-    deliveryState,
-    message: result.success
-      ? result.mode === "sandbox"
-        ? "Invitation saved in the configured sandbox inbox. It has not been delivered to the recipient."
-        : "Invitation email accepted by the provider. Recipient delivery is not yet confirmed."
-      : `Invitation saved. ${result.error}`,
-  };
+      message: deliveryState === "sent"
+        ? "Invitation email requested through Clerk. Recipient delivery is not yet confirmed."
+        : `Invitation saved. ${deliveryError}`,
+    };
+  });
+}
+
+type InvitationTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Call while holding the email advisory lock and organization row lock. */
+export async function assertInvitationReservations(tx: InvitationTransaction, input: {
+  email: string; role: Role; purpose: "staff" | "policyholder"; organizationId: string;
+  enrollmentPolicyType?: string | null; policyProfile?: Invitation["policyProfile"];
+}, excludeId?: string) {
+  const activeInvitations = await tx.select().from(invitations).where(and(
+    eq(invitations.email, input.email),
+    eq(invitations.status, "pending"),
+    isNull(invitations.revokedAt),
+    gt(invitations.expiresAt, new Date()),
+    excludeId ? ne(invitations.id, excludeId) : undefined,
+  ));
+  if (activeInvitations.some((record) => invitationConflict(record, input)))
+    throw new Error("An active or conflicting invitation already exists for this email. Review, resend or revoke it before creating another.");
+  if (input.policyProfile?.source === "manual" && input.policyProfile.insurerReference) {
+    const reference = input.policyProfile.insurerReference;
+    const [policy] = await tx.select({ id: policies.id }).from(policies).where(and(
+      eq(policies.organizationId, input.organizationId),
+      sql`lower(trim(${policies.insurerReference})) = lower(trim(${reference}))`,
+    )).limit(1);
+    const [reserved] = await tx.select({ id: invitations.id }).from(invitations).where(and(
+      eq(invitations.organizationId, input.organizationId),
+      eq(invitations.purpose, "policyholder"),
+      eq(invitations.status, "pending"),
+      isNull(invitations.revokedAt),
+      gt(invitations.expiresAt, new Date()),
+      excludeId ? ne(invitations.id, excludeId) : undefined,
+      sql`lower(trim(${invitations.policyProfile}->>'insurerReference')) = lower(trim(${reference}))`,
+    )).limit(1);
+    if (policy || reserved)
+      throw new Error("This insurer policy reference is already recorded or reserved by an active invitation. Review the existing record.");
+  }
 }
 
 export async function createPortalInvitation(input: {
@@ -105,6 +130,19 @@ export async function createPortalInvitation(input: {
   const clerkProfile = await findClerkProfileByEmail(email);
   const invitation = await db.transaction(async (tx) => {
     await requireCurrentActor(tx, input.actor);
+    if (input.purpose === "staff" && (input.actor.role !== "admin" || input.role === "user"))
+      throw new Error("Only administrators can invite staff.");
+    if (input.purpose === "policyholder" && !["admin", "head_agent", "agent"].includes(input.actor.role))
+      throw new Error("Only authorized staff can invite policyholders.");
+    if (input.actor.role !== "admin") {
+      const [membership] = await tx.select({ id: agentOrganizations.id }).from(agentOrganizations)
+        .where(and(eq(agentOrganizations.agentId, input.actor.id), eq(agentOrganizations.organizationId, input.organizationId))).for("share");
+      if (!membership) throw new Error("You do not have access to this organization.");
+    }
+    if (input.purpose === "policyholder" && (!input.enrollmentPolicyType || !input.policyProfile || !input.enrollmentPhone))
+      throw new Error("Complete the policy profile before inviting its holder.");
+    // Serialize conflicting roles and organizations for the same invited identity.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`invitation:${email}`}, 0))`);
     // Serialize invitation creation per organization, including duplicate checks.
     const [organization] = await tx
       .select()
@@ -154,34 +192,9 @@ export async function createPortalInvitation(input: {
         "An existing policyholder cannot become staff through an invitation, and staff roles must be consistent across organizations.",
       );
     }
-    const [duplicate] = await tx
-      .select({ id: invitations.id })
-      .from(invitations)
-      .where(
-        and(
-          eq(invitations.email, email),
-          eq(invitations.organizationId, input.organizationId),
-          eq(invitations.purpose, input.purpose),
-          eq(invitations.status, "pending"),
-          isNull(invitations.revokedAt),
-          gt(invitations.expiresAt, new Date()),
-          ...(input.purpose === "policyholder"
-            ? [
-                eq(
-                  invitations.enrollmentPolicyType,
-                  input.enrollmentPolicyType!,
-                ),
-              ]
-            : []),
-        ),
-      )
-      .limit(1);
-    if (duplicate)
-      throw new Error(
-        "An active invitation already exists. Resend it from the invitations list.",
-      );
+    await assertInvitationReservations(tx, { ...input, email });
     const policyNumber = input.enrollmentPolicyType
-      ? `${input.policyProfile?.source === "manual" ? "MAN" : "DEMO"}-${input.enrollmentPolicyType === "motor" ? "MOT" : "BRG"}-${createInvitationToken().slice(0, 16).toUpperCase()}`
+      ? createPortalPolicyNumber(input.policyProfile!.source, input.enrollmentPolicyType)
       : null;
     const [created] = await tx
       .insert(invitations)
@@ -278,6 +291,8 @@ export async function listPortalInvitations(
     deliveryError: invitation.deliveryError,
     policyType: invitation.enrollmentPolicyType,
     policyNumber: invitation.enrollmentPolicyNumber,
+    lastSentAt: invitation.lastSentAt?.toISOString() ?? null,
+    acceptedAt: invitation.acceptedAt?.toISOString() ?? null,
   }));
 }
 
@@ -309,5 +324,10 @@ export async function invitationPreview(token: string) {
       ? `…${invitation.enrollmentPolicyNumber.slice(-6)}`
       : null,
     source: invitation.policyProfile?.source,
+    insurerReference: invitation.policyProfile?.insurerReference,
+    insuredAsset: invitation.policyProfile?.insuredAsset,
+    coverageStart: invitation.policyProfile?.coverageStart,
+    coverageEnd: invitation.policyProfile?.coverageEnd,
+    coverageSummary: invitation.policyProfile?.coverageSummary,
   };
 }

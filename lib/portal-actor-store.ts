@@ -14,11 +14,13 @@ import {
 export const getPortalDatabaseAvailability = cache(async (): Promise<PortalDatabaseAvailability> => {
   try {
     const result = await db.execute<{
-      actors: boolean; enrollments: boolean; roleOperations: boolean;
+      actors: boolean; enrollments: boolean; roleOperations: boolean; invitationProvider: boolean;
     }>(sql`select
       to_regclass('portal_actors') is not null as actors,
       to_regclass('policyholder_enrollments') is not null as enrollments,
-      to_regclass('clerk_role_operations') is not null as "roleOperations"`);
+      to_regclass('clerk_role_operations') is not null as "roleOperations",
+      exists(select 1 from information_schema.columns where table_schema = 'public'
+        and table_name = 'invitations' and column_name = 'clerk_invitation_id') as "invitationProvider"`);
     return portalTablesAvailability(result.rows[0]);
   } catch (error) {
     return portalDatabaseFailure(error);

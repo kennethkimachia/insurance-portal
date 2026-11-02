@@ -5,6 +5,7 @@ import {
   timestamp,
   text,
   jsonb,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { userRoleEnum, invitationStatusEnum } from "./enums";
 import { portalActors } from "./portal-actors";
@@ -22,6 +23,7 @@ export const invitations = pgTable("invitations", {
     .references(() => portalActors.id),
   // Only the SHA-256 digest is stored. The secret appears only in the emailed link.
   token: varchar("token", { length: 255 }).notNull().unique(),
+  clerkInvitationId: text("clerk_invitation_id"),
   purpose: varchar("purpose", { length: 20 })
     .$type<"staff" | "policyholder">()
     .notNull()
@@ -45,11 +47,11 @@ export const invitations = pgTable("invitations", {
     source: "manual" | "demo";
   }>(),
   deliveryState: varchar("delivery_state", { length: 20 })
-    .$type<"pending" | "sandbox" | "sent" | "failed">()
+    .$type<"pending" | "sent" | "failed">()
     .notNull()
     .default("pending"),
   deliveryError: text("delivery_error"),
   lastSentAt: timestamp("last_sent_at"),
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [uniqueIndex("invitation_policy_number_unique").on(table.enrollmentPolicyNumber)]);

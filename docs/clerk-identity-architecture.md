@@ -20,9 +20,9 @@ is required.
 
 `portal_actors` has no name, email, avatar, password, or global role column. It
 retains the original UUID so existing foreign keys and historical ownership remain
-stable. An unlinked legacy row cannot authenticate. A signup creates no portal
+stable. An unlinked legacy row cannot authenticate. An invitation-based account activation creates no portal
 access until the account holder accepts an authorized invitation; an explicitly
-assigned Clerk administrator may bootstrap enrollment through `/auth/continue`.
+configured first Clerk administrator may bootstrap enrollment through `/auth/continue`.
 
 ## Profile resolution and authorization
 
@@ -46,12 +46,9 @@ server-side checks. Client-editable unsafe metadata is never an authority.
 
 ## Insurance organizations
 
-The original Better Auth configuration used only `nextCookies()`, not its
-Organizations plugin. Its `organizationId` was a custom user field; the insurers
-and agent memberships were application tables. There is therefore no Better Auth
-Organizations integration to migrate to Clerk Organizations. Insurance
-organizations remain PostgreSQL business records, linked to Clerk users through
-their stable `portal_actors` UUIDs.
+Insurance organizations remain PostgreSQL business records, linked to Clerk users
+through their stable `portal_actors` UUIDs. Clerk Organizations is not used by this
+prototype; account authentication and insurer membership are separate concerns.
 
 - A policyholder has one `policyholder_enrollments` row, keyed by actor UUID,
   with one required insurance organization. Invitations cannot enroll the same
@@ -142,3 +139,6 @@ new runtime. Removing that archive is a separate approved retention decision.
 Official references: [user data and alternatives to syncing](https://clerk.com/docs/guides/development/webhooks/syncing),
 [backend metadata updates](https://clerk.com/docs/reference/backend/user/update-user-metadata),
 [user directory filters](https://clerk.com/docs/reference/backend/user/get-user-list).
+
+The [current Clerk setup](clerk-authentication.md) describes Clerk-managed emails,
+provider Invite-only mode, local activation routes, and first-admin configuration.

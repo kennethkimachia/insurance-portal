@@ -14,10 +14,9 @@ export default function HelpPage() {
           surveyor.
         </p>
         <p>
-          Use the invitation sent by your agent to create or connect an account.
-          Verify your email, then explicitly accept the invitation. An expired
-          or revoked link needs to be resent by the sender.
+          Access is by invitation; there is no public registration. Policyholders need an existing policy recorded by authorized staff; staff need an administrator&apos;s invitation. Open the latest invitation email from Clerk, activate or sign in to the invited account, then review and accept your access. An expired or revoked link needs to be resent or replaced by the sender.
         </p>
+        <p>Review the insurer policy number, insured asset and recorded coverage dates before accepting. Ask the sender to correct mistakes. A generated portal reference identifies the portal record and does not replace the insurer&apos;s policy number.</p>
         <p>
           You can report a Motor or Burglary incident without a police abstract
           or completed loss inventory. Enter what you know, use the unknown or
@@ -30,7 +29,7 @@ export default function HelpPage() {
           files from that claim.
         </p>
         <p>
-          If no agent has been assigned, contact the agent who invited you. Once
+          The head agent (claims manager) dispatches received claims to agents. Your inviting agent is not automatically your claims handler. If no agent has been assigned, contact the agent who invited you. Once
           assigned, the claim page shows your agent&apos;s available email and
           phone number.
         </p>

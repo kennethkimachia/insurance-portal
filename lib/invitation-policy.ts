@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Role } from "./permissions";
 
 export const INVITATION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+export const INVITATION_RESEND_COOLDOWN_MS = 60_000;
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
 export const isInvitationToken = (token: string) =>
   /^[a-f0-9]{64}$/.test(token);
@@ -14,14 +15,39 @@ export function invitationState(
   invitation: { status: string; expiresAt: Date; revokedAt?: Date | null },
   now = new Date(),
 ): InvitationState {
-  if (invitation.revokedAt) return "revoked";
+  if (invitation.revokedAt || invitation.status === "revoked") return "revoked";
   if (invitation.status === "accepted") return "accepted";
   if (
     invitation.status === "expired" ||
     invitation.expiresAt.getTime() <= now.getTime()
   )
     return "expired";
-  return "pending";
+  return invitation.status === "pending" ? "pending" : "revoked";
+}
+
+export function invitationResendAvailable(lastAttempt: Date, now = new Date()) {
+  return now.getTime() - lastAttempt.getTime() >= INVITATION_RESEND_COOLDOWN_MS;
+}
+
+export function invitationConflict(a: { role: Role; organizationId: string; purpose: string; enrollmentPolicyType?: string | null }, b: typeof a) {
+  if (a.purpose !== b.purpose || a.role !== b.role) return true;
+  if (a.purpose === "policyholder")
+    return a.organizationId !== b.organizationId || a.enrollmentPolicyType === b.enrollmentPolicyType;
+  return a.organizationId === b.organizationId;
+}
+
+/** A portal reference identifies a record; it never issues insurer coverage. */
+export function createPortalPolicyNumber(source: "manual" | "demo", type: "motor" | "burglary") {
+  return `${source === "manual" ? "MAN" : "DEMO"}-${type === "motor" ? "MOT" : "BRG"}-${randomBytes(12).toString("hex").toUpperCase()}`;
+}
+
+export function invitationRegistrationPath(token: string) {
+  return isInvitationToken(token) ? `/sign-up/activate/${token}` : null;
+}
+
+/** Only an explicitly selected first administrator may bypass an invitation. */
+export function canBootstrapPortal(identity: { clerkUserId: string; role: Role | null; emailVerified: boolean }, bootstrapId?: string) {
+  return !!bootstrapId && identity.clerkUserId === bootstrapId && identity.role === "admin" && identity.emailVerified;
 }
 
 export function invitationAcceptanceError(

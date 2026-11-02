@@ -2,7 +2,11 @@
 
 Updated 3 October 2026. This implements the recommendations in [the original review](prototype-review.md). All changes remain uncommitted. No database migration, database write, live message, storage upload, or deployment was performed during implementation checks.
 
-Authentication was replaced with Clerk on 5 October 2026. [The Clerk handoff](clerk-authentication.md) supersedes the authentication setup below: Clerk account signup is available publicly, while new portal profiles still require verified invitation enrollment. Earlier validation statements below describe the 3 October prototype.
+Authentication is owned by Clerk. The [current Clerk setup](clerk-authentication.md)
+and [1 November onboarding report](onboarding-review-and-changes.md) supersede
+historical authentication/email setup and validation statements in this document.
+Public registration is closed in the app; Clerk must be configured to Invite-only.
+Clerk now sends invitations and authentication emails.
 
 The supported products remain **Motor and Burglary**. Roles remain **policyholder (`user`), agent, claims manager (`head_agent`), and platform administrator**. Insurer integration, coverage automation, automated fraud decisions, emergency dispatch, and payment processing are deferred.
 
@@ -61,7 +65,7 @@ Use `.env.example` as a configuration reference. Do not copy production credenti
 
 - **Database:** use a dedicated test PostgreSQL database compatible with `pg.Pool` transactions and the manually reviewed expanded schema. No runtime connection is created merely by importing the pool.
 - **Initial administrator:** use an existing, verified administrator in that test environment, or have the database owner perform a controlled bootstrap. Public signup has no administrator bypass. The existing seed script performs writes and is not part of validation or automated setup.
-- **Email:** the default `PORTAL_EMAIL_MODE=disabled` deliberately prevents delivery. `sandbox` uses the explicitly configured Mailtrap inbox; UI delivery messages distinguish it from recipient email. `live` is an explicit operator setting for actual recipient delivery. Configure the sender, API key and positive sandbox inbox ID as applicable. Failed invites remain resendable and do not pretend delivery succeeded.
+- **Email:** Clerk owns invitation and authentication delivery. Follow [current setup](clerk-authentication.md); previous custom mail settings are retired. Email request/failure is visible, but inbox delivery requires provider verification.
 - **Evidence:** use a private test B2 bucket and restricted credentials. Confirm the bucket has no public access. Missing storage configuration leaves the claim submitted and asks for document retry. New files stay pending until manual inspection. No antivirus or content-disarm service is included in this prototype.
 - **Topology:** authentication/upload limits are in memory per server process. Before multiple instances or real traffic, use shared rate-limit storage and confirm proxy/origin handling, maximum request size and upload timeout in the hosting environment.
 

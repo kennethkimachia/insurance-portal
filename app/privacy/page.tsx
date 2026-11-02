@@ -17,6 +17,9 @@ export default function PrivacyPage() {
       </p>
       <div className="space-y-4 text-sm">
         <p>
+          Clerk manages account profiles, authentication, email verification and invitation emails. The portal stores the policy, insurance contact details and enrollment/access records separately. An emailed invitation is tied to its intended email address and must be explicitly accepted before portal access is granted.
+        </p>
+        <p>
           The portal stores account and contact details, your policy profile,
           incident answers, supplied documents, and claim activity to help
           authorized staff review your report. It preserves your original

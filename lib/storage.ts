@@ -1,70 +1,45 @@
-import {
-  S3Client,
-  GetObjectCommand,
-  DeleteObjectCommand,
-} from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-
-const s3 = new S3Client({
-  endpoint: process.env.B2_ENDPOINT!,
-  region: process.env.B2_REGION!,
-  credentials: {
-    accessKeyId: process.env.B2_KEY_ID!,
-    secretAccessKey: process.env.B2_APP_KEY!,
-  },
-  requestChecksumCalculation: "WHEN_REQUIRED",
-  responseChecksumValidation: "WHEN_REQUIRED",
-});
-
-const BUCKET = process.env.B2_BUCKET_NAME!;
-
-/**
- * Generate a presigned URL for downloading / viewing a file.
- */
-export async function getFileUrl(
-  key: string,
-  expiresIn = 3600,
-  response?: {
+import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { storageConfiguration } from "./storage-policy";
+let storage: {
+    s3: S3Client;
+    bucket: string;
+} | undefined;
+/** Lazy initialization: missing storage variables must not prevent claim reporting. */
+export function getClaimStorage() {
+    if (!storage) {
+        const { bucket, ...config } = storageConfiguration(process.env);
+        storage = { s3: new S3Client({ ...config, maxAttempts: 3 }), bucket };
+    }
+    return storage;
+}
+/** Short-lived private downloads; a signature alone does not prove object existence. */
+export async function getFileUrl(key: string, expiresIn = 300, response?: {
     contentType?: string;
     contentDisposition?: string;
-  },
-) {
-  const command = new GetObjectCommand({
-    Bucket: BUCKET,
-    Key: key,
-    ResponseContentType: response?.contentType,
-    ResponseContentDisposition: response?.contentDisposition,
-  });
-
-  return getSignedUrl(s3, command, { expiresIn });
+}) {
+    if (!key || !Number.isInteger(expiresIn) || expiresIn < 1 || expiresIn > 3600)
+        throw new Error("Invalid document download request.");
+    const { s3, bucket } = getClaimStorage();
+    await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    return getSignedUrl(s3, new GetObjectCommand({
+        Bucket: bucket, Key: key,
+        ResponseContentType: response?.contentType,
+        ResponseContentDisposition: response?.contentDisposition,
+    }), { expiresIn });
 }
-
-/**
- * Delete a file from the bucket.
- */
 export async function deleteFile(key: string) {
-  const command = new DeleteObjectCommand({
-    Bucket: BUCKET,
-    Key: key,
-  });
-
-  return s3.send(command);
+    const { s3, bucket } = getClaimStorage();
+    return s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
 }
-
-import { randomUUID } from "crypto";
-import path from "path";
-
-/**
- * Build a storage key for claim attachments.
- * Format: {orgId}/claims/{claimId}/{uuid}.{ext}
- */
-export function buildClaimFileKey(
-  orgId: string,
-  claimId: string,
-  originalFilename: string,
-) {
-  const ext = path.extname(originalFilename) || "";
-  return `${orgId}/claims/${claimId}/${randomUUID()}${ext}`;
+export function buildClaimFileKey(orgId: string, claimId: string, originalFilename: string) {
+    const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
+    if (!uuid.test(orgId) || !uuid.test(claimId))
+        throw new Error("Invalid claim storage reference.");
+    const ext = path.extname(originalFilename).toLowerCase();
+    if (!/^\.[a-z0-9]{1,8}$/.test(ext))
+        throw new Error("Invalid evidence filename.");
+    return `${orgId}/claims/${claimId}/${randomUUID()}${ext}`;
 }
-
-export { s3, BUCKET };

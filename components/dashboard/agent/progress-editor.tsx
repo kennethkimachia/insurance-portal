@@ -29,6 +29,7 @@ import {
   Loader2,
   RotateCcw,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import {
   addProgressStep,
@@ -65,6 +66,7 @@ export function ProgressEditor({
   role = "agent",
   readOnly = false,
 }: ProgressEditorProps) {
+  const router = useRouter();
   const canEdit = !readOnly && role !== "user";
   const [steps, setSteps] = useState<ProgressStep[]>(initialSteps);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -75,87 +77,50 @@ export function ProgressEditor({
   const [error, setError] = useState<string | null>(null);
 
   const completedCount = steps.filter((s) => s.isCompleted).length;
-  const progress = steps.length > 0 ? (completedCount / steps.length) * 100 : 0;
+
+  function runTask(work: () => Promise<void>, stepId: string | null = null) {
+    setActionStepId(stepId);
+    setError(null);
+    startTransition(async () => {
+      try { await work(); }
+      catch { setError("Could not update this task. Your entries are still here; please retry."); }
+      finally { setActionStepId(null); }
+    });
+  }
 
   function handleAddStep() {
-    if (!newLabel.trim()) return;
-
-    startTransition(async () => {
-      const result = await addProgressStep(
-        claimId,
-        newLabel,
-        newDescription || undefined,
-      );
-      if (result.success && result.step) {
-        setSteps((prev) => [...prev, result.step as ProgressStep]);
-        setNewLabel("");
-        setNewDescription("");
-        setShowAddForm(false);
-        setError(null);
-      } else {
-        setError(
-          "error" in result ? result.error : "Unable to add progress step",
-        );
-      }
+    if (!canEdit || isPending || !newLabel.trim()) return;
+    runTask(async () => {
+      const result = await addProgressStep(claimId, newLabel, newDescription || undefined);
+      if (!result.success) { setError(result.error); return; }
+      setSteps((prev) => [...prev, result.step]);
+      setNewLabel(""); setNewDescription(""); setShowAddForm(false);
+      router.refresh();
     });
   }
 
   function handleToggleStep(stepId: string, isCurrentlyCompleted: boolean) {
-    setActionStepId(stepId);
-    setError(null);
-    startTransition(async () => {
-      if (isCurrentlyCompleted) {
-        const result = await uncompleteProgressStep(stepId);
-        if (result.success) {
-          setSteps((prev) =>
-            prev.map((s) =>
-              s.id === stepId
-                ? {
-                    ...s,
-                    isCompleted: false,
-                    completedAt: null,
-                    completedBy: null,
-                  }
-                : s,
-            ),
-          );
-        } else {
-          setError(result.error ?? "Unable to revert this step");
-        }
-      } else {
-        const result = await completeProgressStep(stepId);
-        if (result.success) {
-          setSteps((prev) =>
-            prev.map((s) =>
-              s.id === stepId
-                ? {
-                    ...s,
-                    isCompleted: true,
-                    completedAt: new Date().toISOString(),
-                  }
-                : s,
-            ),
-          );
-        } else {
-          setError(result.error ?? "Unable to complete this step");
-        }
-      }
-      setActionStepId(null);
-    });
+    if (!canEdit || isPending) return;
+    runTask(async () => {
+      const result = await (isCurrentlyCompleted ? uncompleteProgressStep(stepId) : completeProgressStep(stepId));
+      if (!result.success) { setError(result.error); return; }
+      setSteps((prev) => prev.map((s) => s.id === stepId ? {
+        ...s, isCompleted: !isCurrentlyCompleted,
+        completedAt: isCurrentlyCompleted ? null : new Date().toISOString(),
+        completedBy: null,
+      } : s));
+      router.refresh();
+    }, stepId);
   }
 
   function handleRemoveStep(stepId: string) {
-    setActionStepId(stepId);
-    setError(null);
-    startTransition(async () => {
+    if (!canEdit || isPending) return;
+    runTask(async () => {
       const result = await removeProgressStep(stepId);
-      if (result.success) {
-        setSteps((prev) => prev.filter((s) => s.id !== stepId));
-      } else {
-        setError(result.error ?? "Unable to remove this step");
-      }
-      setActionStepId(null);
-    });
+      if (!result.success) { setError(result.error); return; }
+      setSteps((prev) => prev.filter((s) => s.id !== stepId));
+      router.refresh();
+    }, stepId);
   }
 
   return (
@@ -164,14 +129,14 @@ export function ProgressEditor({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <CardTitle className="text-lg">
-              Milestones and supporting tasks
+              Supporting tasks
             </CardTitle>
             <CardDescription>
               {claimNumber} · {completedCount} of {steps.length} complete.
-              Primary milestones follow claim status.
+              These tasks support review; their completion does not approve the claim. All task details are visible to the policyholder.
             </CardDescription>
           </div>
-          <Button
+          {canEdit && <Button
             variant="outline"
             size="sm"
             className="gap-1.5 self-start"
@@ -179,25 +144,14 @@ export function ProgressEditor({
             disabled={!canEdit}
           >
             <Plus className="h-3.5 w-3.5" />
-            Add Step
-          </Button>
+            Add task
+          </Button>}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="relative">
-          <div className="h-2.5 w-full rounded-full bg-muted">
-            <div
-              className="h-2.5 rounded-full bg-primary transition-all duration-700 ease-in-out"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <span className="mt-1 block text-right text-xs text-muted-foreground">
-            {Math.round(progress)}%
-          </span>
-        </div>
 
         {error && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
             {error}
           </div>
         )}
@@ -303,6 +257,7 @@ export function ProgressEditor({
                       day: "numeric",
                       month: "short",
                       year: "numeric",
+                      timeZone: "Africa/Nairobi",
                       hour: "2-digit",
                       minute: "2-digit",
                     })}
@@ -406,8 +361,7 @@ export function ProgressEditor({
         {steps.length === 0 && !showAddForm && (
           <div className="portal-empty">
             <p className="text-sm text-muted-foreground">
-              No supporting tasks yet. Add tasks for work performed in the
-              portal.
+              {canEdit ? "No supporting tasks yet. Add tasks for work performed on this claim." : "No supporting tasks have been added."}
             </p>
           </div>
         )}

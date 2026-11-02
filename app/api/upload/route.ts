@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { s3, BUCKET, buildClaimFileKey } from "@/lib/storage";
-import { requireSession } from "@/lib/session";
+import { getClaimStorage, buildClaimFileKey } from "@/lib/storage";
+import { getSessionUser } from "@/lib/session";
 import { requireClaimAccess, lockClaimForMutation } from "@/lib/claim-access";
 import { db } from "@/db";
 import { claims, claimAttachments, claimEvents } from "@/db/schema";
@@ -18,6 +17,9 @@ import { inspectEvidenceContent } from "@/lib/evidence-content";
 import { createHash } from "node:crypto";
 import { reserveUploadSlot } from "@/lib/upload-capacity";
 import { actionError } from "@/lib/action-errors";
+
+import { putVerifiedEvidence } from "@/lib/storage-operations";
+import { StorageConfigurationError } from "@/lib/storage-policy";
 
 export const runtime = "nodejs";
 const envelope = z.object({
@@ -57,7 +59,8 @@ export async function POST(req: NextRequest) {
   let reservation: typeof claimAttachments.$inferSelect | undefined;
   let release: (() => void) | undefined;
   try {
-    const session = await requireSession();
+    const session = await getSessionUser();
+    if (!session) return NextResponse.json({ error: "Sign in before uploading evidence." }, { status: 401 });
     if (req.headers.get("origin") !== req.nextUrl.origin)
       return NextResponse.json({ error: "Forbidden origin" }, { status: 403 });
     release = reserveUploadSlot(session.id);
@@ -152,15 +155,7 @@ export async function POST(req: NextRequest) {
         throw new Error(
           "This file is still uploading. Retry in a few minutes if it does not finish.",
         );
-      if (
-        !BUCKET ||
-        !process.env.B2_ENDPOINT ||
-        !process.env.B2_KEY_ID ||
-        !process.env.B2_APP_KEY
-      )
-        throw new Error(
-          "Document storage is not configured. Your claim remains submitted; retry documents later.",
-        );
+      getClaimStorage(); // Validate all required configuration before reserving a file.
       let row;
       if (existing) {
         [row] = await tx
@@ -224,14 +219,10 @@ export async function POST(req: NextRequest) {
         alreadyUploaded: true,
       });
     reservation = prepared.row;
-    await s3.send(
-      new PutObjectCommand({
-        Bucket: BUCKET,
-        Key: reservation.storageKey,
-        Body: bytes,
-        ContentType: contentType,
-      }),
-    );
+    const { s3, bucket } = getClaimStorage();
+    await putVerifiedEvidence(s3, {
+      bucket, key: reservation.storageKey, bytes, contentType, sha256: contentSha256,
+    });
     const attachmentId = reservation.id;
     await db.transaction(async (tx) => {
       const locked = await lockClaimForMutation(
@@ -322,7 +313,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: message },
       {
-        status: denied
+        status: err instanceof StorageConfigurationError
+          ? 503
+          : denied
           ? 403
           : /capacity reached/.test(message)
             ? 429

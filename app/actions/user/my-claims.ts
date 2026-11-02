@@ -1,5 +1,6 @@
 "use server";
 import { actionError } from "@/lib/action-errors";
+import { storageConfiguration } from "@/lib/storage-policy";
 
 import { portalActors, policyholderEnrollments } from "@/db/schema";
 import { getActorProfiles, profileFor, getActorProfile } from "@/lib/clerk-directory";
@@ -320,8 +321,11 @@ export async function getClaimWorkspace(id: string) {
             .limit(5)
         : Promise.resolve([]),
     ]);
-  const profiles = await getActorProfiles(notes.map((n) => n.authorId));
+  const profiles = await getActorProfiles([...notes.map((n) => n.authorId), ...events.map((e) => e.actorId)]);
+  let storageReady = true;
+  try { storageConfiguration(process.env); } catch { storageReady = false; }
   return {
+    storageReady,
     claim: {
       ...claim,
       assessmentSummary:
@@ -341,7 +345,7 @@ export async function getClaimWorkspace(id: string) {
     },
     events: events
       .filter((e) => e.type !== "note_added")
-      .map((e) => ({ ...e, createdAt: e.createdAt.toISOString() })),
+      .map((e) => ({ ...e, authorName: e.actorId ? profileFor(profiles, e.actorId).name : "Portal", createdAt: e.createdAt.toISOString() })),
     notes: notes.map(({ authorId, ...n }) => ({ ...n, authorName: profileFor(profiles, authorId).name, createdAt: n.createdAt.toISOString() })),
     requests: requests.map((r) => ({
       ...r,

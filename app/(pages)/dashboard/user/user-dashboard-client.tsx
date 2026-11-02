@@ -73,6 +73,21 @@ export function UserDashboardClient({
           supporting documents after your report is received.
         </p>
       </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>How your claim moves forward</CardTitle>
+          <CardDescription>Your invitation gives you access to your recorded policy. You can follow each claim from receipt to its recorded outcome.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <ol className="list-decimal space-y-2 pl-5">
+            <li>Check your policy details below. Contact your inviting agent if anything needs correcting.</li>
+            <li>Report an incident and keep the claim reference. Supporting documents can follow later.</li>
+            <li>The head agent assigns a claims agent. Open your claim to see who is handling it, the latest updates, and anything needed from you.</li>
+          </ol>
+          <p className="text-muted-foreground">The person who invited you may differ from your assigned claims agent. Outcomes require a manager&apos;s review; portal access does not confirm coverage or payment.</p>
+          <Link href="/help" className="text-primary underline">Help with the claims process</Link>
+        </CardContent>
+      </Card>
       <div className="grid gap-4 sm:grid-cols-3">
         {[
           { label: "Active claims", value: active.length, icon: FileClock },
@@ -103,10 +118,11 @@ export function UserDashboardClient({
                 {p.policyType === "motor" ? "Motor" : "Burglary"} policy
               </CardTitle>
               <CardDescription>
-                {p.policyNumber} · {p.organizationName}
+                Portal reference: {p.policyNumber} · {p.organizationName}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
+              {p.insurerReference && <p className="break-all text-sm">Insurer policy number: {p.insurerReference}</p>}
               <p className="text-sm">
                 {p.insuredAsset || "Insured asset details pending confirmation"}
               </p>

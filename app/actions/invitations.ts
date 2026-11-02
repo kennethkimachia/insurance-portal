@@ -10,7 +10,7 @@ import {
 } from "@/db/schema";
 import { stageInvitationRole, processRoleOperation } from "@/lib/clerk-role-operations";
 import { requireSession } from "@/lib/session";
-import { and, eq, notInArray } from "drizzle-orm";
+import { and, eq, notInArray, sql } from "drizzle-orm";
 import {
   createInvitationToken,
   hashInvitationToken,
@@ -21,9 +21,14 @@ import {
   deliverInvitation,
   invitationPreview,
   listPortalInvitations,
+  assertInvitationReservations,
 } from "@/lib/invitations";
 import { revalidatePath } from "next/cache";
 import { requireCurrentActor } from "@/lib/transaction-identity";
+import { clerkClient } from "@clerk/nextjs/server";
+import { revokeClerkInvitation } from "@/lib/clerk-invitation-policy";
+import { invitationResendAvailable } from "@/lib/invitation-policy";
+import { organizations } from "@/db/schema";
 
 export async function getInvitationPreview(token: string) {
   return invitationPreview(token);
@@ -77,6 +82,12 @@ export async function resendPortalInvitation(id: string) {
         throw new Error(
           "Create a new invitation; this one has already been accepted or revoked.",
         );
+      if (!invitationResendAvailable(record.lastSentAt ?? record.createdAt))
+        throw new Error("Wait one minute before requesting another invitation email.");
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`invitation:${record.email}`}, 0))`);
+      await tx.select({ id: organizations.id }).from(organizations).where(eq(organizations.id, record.organizationId)).for("update");
+      await assertInvitationReservations(tx, record, record.id);
+      await revokeClerkInvitation((await clerkClient()).invitations, record.clerkInvitationId);
       const [rotated] = await tx
         .update(invitations)
         .set({
@@ -85,6 +96,8 @@ export async function resendPortalInvitation(id: string) {
           expiresAt: new Date(Date.now() + INVITATION_LIFETIME_MS),
           deliveryState: "pending",
           deliveryError: null,
+          clerkInvitationId: null,
+          lastSentAt: new Date(),
         })
         .where(eq(invitations.id, id))
         .returning();
@@ -128,6 +141,7 @@ export async function revokePortalInvitation(id: string) {
         throw new Error(
           "This invitation has already been accepted or revoked.",
         );
+      await revokeClerkInvitation((await clerkClient()).invitations, record.clerkInvitationId);
       await tx
         .update(invitations)
         .set({ revokedAt: new Date() })

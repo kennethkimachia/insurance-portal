@@ -8,13 +8,14 @@ import {
   type PortalDatabaseAvailability,
 } from "../lib/portal-database-policy";
 
-test("portal access requires all three cutover tables, including role operations", () => {
-  assert.equal(portalTablesAvailability({ actors: true, enrollments: true, roleOperations: true }), "ready");
+test("portal access requires identity tables and the Clerk invitation upgrade", () => {
+  assert.equal(portalTablesAvailability({ actors: true, enrollments: true, roleOperations: true, invitationProvider: true }), "ready");
   for (const tables of [
-    { actors: false, enrollments: false, roleOperations: false },
-    { actors: false, enrollments: true, roleOperations: true },
-    { actors: true, enrollments: false, roleOperations: true },
-    { actors: true, enrollments: true, roleOperations: false },
+    { actors: false, enrollments: false, roleOperations: false, invitationProvider: false },
+    { actors: false, enrollments: true, roleOperations: true, invitationProvider: true },
+    { actors: true, enrollments: false, roleOperations: true, invitationProvider: true },
+    { actors: true, enrollments: true, roleOperations: false, invitationProvider: true },
+    { actors: true, enrollments: true, roleOperations: true, invitationProvider: false },
   ]) assert.equal(portalTablesAvailability(tables), "setup-required");
   assert.equal(portalTablesAvailability(undefined), "unavailable");
 });

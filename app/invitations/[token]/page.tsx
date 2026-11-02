@@ -8,6 +8,9 @@ import {
 } from "@/components/auth/accept-invitation";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { invitationRegistrationPath, isInvitationToken } from "@/lib/invitation-policy";
+import { getPortalDatabaseAvailability } from "@/lib/portal-actor-store";
+import { PortalUnavailable } from "@/components/auth/portal-unavailable";
 
 export const dynamic = "force-dynamic";
 export const metadata = {
@@ -18,11 +21,18 @@ export const metadata = {
 
 export default async function InvitationPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ token: string }>;
+  searchParams: Promise<{ __clerk_ticket?: string }>;
 }) {
   const { token } = await params;
+  if (isInvitationToken(token)) {
+    const availability = await getPortalDatabaseAvailability();
+    if (availability !== "ready") return <PortalUnavailable status={availability} next={`/invitations/${token}`} retryCurrentPage />;
+  }
   const invitation = await invitationPreview(token);
+  const ticket = (await searchParams).__clerk_ticket;
   if (!invitation)
     return (
       <AuthShell
@@ -75,6 +85,10 @@ export default async function InvitationPage({
             </dd>
           </div>
         )}
+        {invitation.insurerReference && <div><dt className="text-muted-foreground">Insurer policy number</dt><dd>{invitation.insurerReference}</dd></div>}
+        {invitation.insuredAsset && <div><dt className="text-muted-foreground">Insured vehicle or premises</dt><dd>{invitation.insuredAsset}</dd></div>}
+        {(invitation.coverageStart || invitation.coverageEnd) && <div><dt className="text-muted-foreground">Recorded coverage dates</dt><dd>{invitation.coverageStart || "Unknown"} to {invitation.coverageEnd || "Unknown"}</dd></div>}
+        {invitation.coverageSummary && <div><dt className="text-muted-foreground">Recorded coverage summary</dt><dd className="whitespace-pre-wrap">{invitation.coverageSummary}</dd></div>}
         <div>
           <dt className="text-muted-foreground">Expires</dt>
           <dd>
@@ -125,19 +139,18 @@ export default async function InvitationPage({
             Accepting associates this verified account with the organization and
             access shown above.{" "}
             {invitation.purpose === "policyholder" &&
-              "Your agent-recorded contact details and policy will be saved when you accept."}
+              "Check the policy details above. Contact the sender if anything is incorrect. Your agent-recorded contact details and policy will be saved when you accept. This activates portal access and does not purchase insurance or confirm coverage for a claim."}
           </p>
           <AcceptInvitation token={token} />
         </div>
       ) : (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Create an account and verify your email, or sign in to your existing
-            account. Then return here to accept.
+            Activate your invited account using the invitation email, or sign in to an existing account. You will then review and accept this access.
           </p>
-          <Button asChild className="w-full">
-            <Link href={`/sign-up?token=${token}`}>Create account</Link>
-          </Button>
+          {ticket ? <Button asChild className="w-full">
+            <Link href={`${invitationRegistrationPath(token)}?__clerk_ticket=${encodeURIComponent(ticket)}`}>Activate invited account</Link>
+          </Button> : <p className="text-sm text-muted-foreground">For first-time activation, open the latest invitation email from Clerk. If it is missing or expired, ask the sender to resend it.</p>}
           <Button asChild variant="outline" className="w-full">
             <Link href={`/sign-in?next=${encodeURIComponent(next)}`}>
               Sign in to accept

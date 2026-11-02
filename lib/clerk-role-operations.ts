@@ -29,6 +29,13 @@ async function validateEnrollment(tx: Tx, actorId: string, invitation: Invitatio
   if (existing.length) throw new Error(invitation.purpose === "staff" ? "A policyholder account cannot accept staff access." : "You already have a policy of this type. Ask your agent to review it.");
   if (invitation.purpose === "policyholder" && (!invitation.enrollmentPolicyType || !invitation.enrollmentPolicyNumber || !invitation.enrollmentPhone || !invitation.policyProfile))
     throw new Error("This enrollment is incomplete. Ask your agent to replace the invitation.");
+  if (invitation.purpose === "policyholder" && invitation.policyProfile?.source === "manual" && invitation.policyProfile.insurerReference) {
+    const [duplicate] = await tx.select({ id: policies.id }).from(policies).where(and(
+      eq(policies.organizationId, invitation.organizationId),
+      sql`lower(trim(${policies.insurerReference})) = lower(trim(${invitation.policyProfile.insurerReference}))`,
+    )).limit(1);
+    if (duplicate) throw new Error("This insurer policy is already recorded. Ask your agent to review the existing record.");
+  }
 }
 
 export async function stageInvitationRole(token: string) {

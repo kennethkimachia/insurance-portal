@@ -73,7 +73,9 @@ function uploadFile(
       if (
         request.status < 200 ||
         request.status >= 300 ||
-        response.success === false
+        response.success !== true ||
+        typeof response.attachmentId !== "string" ||
+        !response.attachmentId.trim()
       ) {
         reject(
           new Error(

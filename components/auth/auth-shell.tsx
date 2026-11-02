@@ -33,7 +33,7 @@ export function AuthShell({
       <div className="absolute right-5 top-5 z-50 flex items-center gap-3 sm:right-8 sm:top-7">
         <Show when="signed-out">
           <Link href="/sign-in" className="text-sm font-medium hover:underline">Sign in</Link>
-          <Link href="/sign-up" className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground">Sign up</Link>
+          <Link href="/help" className="text-sm font-medium hover:underline">Invitation help</Link>
         </Show>
         <Show when="signed-in"><UserButton /></Show>
         <ModeToggle />

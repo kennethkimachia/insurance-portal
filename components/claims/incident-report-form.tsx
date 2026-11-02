@@ -55,9 +55,11 @@ import {
 import type { EvidenceCategory } from "@/lib/claim-evidence";
 import { getPotentialDuplicateClaims } from "@/app/actions/user/my-claims";
 import { cn } from "@/lib/utils";
+import { claimFieldStep as stepForField, policyIncidentWarning } from "@/lib/claim-form-guidance";
 
 export interface ClaimPolicyContext {
   policyNumber: string;
+  insurerReference?: string | null;
   organizationName: string;
   insuredAsset?: string | null;
   coverageSummary?: string | null;
@@ -82,33 +84,6 @@ const STEPS = [
   "Available evidence",
   "Review & report",
 ];
-const INCIDENT_KEYS = new Set([
-  "incidentType",
-  "registrationNumber",
-  "premisesLocation",
-  "premisesUse",
-  "incidentTiming",
-  "incidentDate",
-  "incidentTime",
-  "incidentRangeStart",
-  "incidentRangeEnd",
-  "discoveryDate",
-  "discoveryTime",
-  "incidentLocation",
-  "description",
-  "contactPhone",
-]);
-function stepForField(path: string) {
-  const first = path.split(".")[0];
-  return INCIDENT_KEYS.has(first)
-    ? 0
-    : first === "pendingEvidence"
-      ? 2
-      : first === "declarationAccepted" || first === "privacyAccepted"
-        ? 3
-        : 1;
-}
-
 export function IncidentReportForm({
   policyType,
   policyId,
@@ -204,6 +179,7 @@ export function IncidentReportForm({
   const idFor = (key: string) => `${prefix}-${key.replaceAll(".", "-")}`;
   const valueFor = (key: FormKey) =>
     String((form as unknown as Record<string, unknown>)[key] ?? "");
+  const coverageWarning = policyIncidentWarning(form, policyContext);
   const incidentDateForMatch =
     form.incidentDate || form.incidentRangeStart || form.discoveryDate;
   useEffect(() => {
@@ -228,7 +204,9 @@ export function IncidentReportForm({
   }, [demo, policyId, incidentDateForMatch]);
 
   function update(key: FormKey, value: unknown) {
-    setForm((previous) => ({ ...previous, [key]: value }) as ClaimFormData);
+    setForm((previous) => ({ ...previous, [key]: value,
+      ...(!["declarationAccepted", "privacyAccepted"].includes(key) ? { declarationAccepted: false } : {}),
+    }) as ClaimFormData);
     setErrors((previous) =>
       Object.fromEntries(
         Object.entries(previous).filter(
@@ -239,6 +217,7 @@ export function IncidentReportForm({
     setSubmitError(undefined);
   }
   function changeUploads(next: DocumentUploads) {
+    setForm((previous) => ({ ...previous, declarationAccepted: false }));
     setUploads(
       Object.fromEntries(
         Object.entries(next).map(([category, files]) => [
@@ -518,9 +497,10 @@ export function IncidentReportForm({
         {policyContext && (
           <div className="rounded-xl border bg-muted/25 p-4 text-sm leading-6">
             <p className="font-medium">
-              Policy {policyContext.policyNumber} ·{" "}
+              Portal reference {policyContext.policyNumber} ·{" "}
               {policyContext.organizationName}
             </p>
+            {policyContext.insurerReference && <p>Insurer policy number: {policyContext.insurerReference}</p>}
             {policyContext.policyholderName && (
               <p>
                 Assisted report for {policyContext.policyholderName}. Your
@@ -548,6 +528,7 @@ export function IncidentReportForm({
             )}
           </div>
         )}
+        {coverageWarning && <p role="status" className="rounded-lg border border-amber-400/40 bg-amber-500/5 p-3 text-sm">{coverageWarning}</p>}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/30 px-3 py-2 text-xs">
           <p role="status" aria-live="polite" className="text-muted-foreground">
             {draft.isSaving
@@ -631,13 +612,12 @@ export function IncidentReportForm({
         >
           <fieldset disabled={submitting} className="space-y-5">
             <legend className="sr-only">{STEPS[step]}</legend>
+            <h2 id={idFor("step-heading")} tabIndex={-1} className="text-lg font-semibold">{STEPS[step]}</h2>
             {Object.keys(errors).length > 0 && (
-              <p
-                role="alert"
-                className="rounded-lg border border-destructive/30 p-3 text-sm text-destructive"
-              >
-                Please check the highlighted fields before continuing.
-              </p>
+              <div role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm text-destructive">
+                <p className="font-medium">Check {Object.keys(errors).length} field{Object.keys(errors).length === 1 ? "" : "s"} before continuing:</p>
+                <ul className="mt-2 list-disc pl-5">{Object.entries(errors).map(([path, message]) => <li key={path}><button type="button" className="text-left underline" onClick={() => { setStep(stepForField(path)); window.setTimeout(() => (document.getElementById(idFor(path)) ?? document.getElementById(idFor("step-heading")))?.focus(), 0); }}>{message}</button></li>)}</ul>
+              </div>
             )}
             {step === 0 && (
               <FieldSet>
@@ -662,6 +642,7 @@ export function IncidentReportForm({
                           (previous) =>
                             ({
                               ...previous,
+                              declarationAccepted: false,
                               incidentType: value,
                               driverFullName: "",
                               licenseNumber: "",
@@ -726,6 +707,7 @@ export function IncidentReportForm({
                           (previous) =>
                             ({
                               ...previous,
+                              declarationAccepted: false,
                               premisesUse: value,
                               pendingEvidence:
                                 value === "business"
@@ -762,6 +744,7 @@ export function IncidentReportForm({
                       (previous) =>
                         ({
                           ...previous,
+                          declarationAccepted: false,
                           incidentTiming: value,
                           incidentDate: "",
                           incidentTime: "",
@@ -1064,6 +1047,7 @@ export function IncidentReportForm({
                             (previous) =>
                               ({
                                 ...previous,
+                                declarationAccepted: false,
                                 alarmFitted: value,
                                 alarmActiveAtTime:
                                   value === "no" ? "n_a" : "unknown",
@@ -1097,6 +1081,7 @@ export function IncidentReportForm({
                           (previous) =>
                             ({
                               ...previous,
+                              declarationAccepted: false,
                               lossItems: items,
                               pendingEvidence: previous.pendingEvidence.map(
                                 (file) =>
@@ -1140,6 +1125,7 @@ export function IncidentReportForm({
                         (previous) =>
                           ({
                             ...previous,
+                            declarationAccepted: false,
                             policeReportStatus: value,
                             policeStation: "",
                             obNumber: "",
@@ -1255,6 +1241,7 @@ export function IncidentReportForm({
                 />
                 <FieldSet>
                   <FieldLegend>Confirm before reporting</FieldLegend>
+                  <p className="text-xs text-muted-foreground">Review the answers above. Editing report details clears the accuracy confirmation so you can confirm the revised report.</p>
                   <label
                     htmlFor={idFor("declarationAccepted")}
                     className="flex items-start gap-3 rounded-lg border p-3 text-sm"
@@ -1341,6 +1328,7 @@ export function IncidentReportForm({
                 <ChevronLeft aria-hidden="true" />
                 Back
               </Button>
+              {step === 0 && <Button type="button" variant="ghost" disabled={submitting} onClick={() => { if (validate(0)) setStep(3); }}>Review with essential details</Button>}
               <span className="text-xs leading-5 text-muted-foreground">
                 Step {step + 1} of {STEPS.length}
               </span>

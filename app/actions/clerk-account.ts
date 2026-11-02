@@ -6,7 +6,7 @@ import { invitations, portalActors } from "@/db/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { safeAuthContinuation } from "@/lib/auth-navigation";
-import { hashInvitationToken, invitationState, normalizeEmail } from "@/lib/invitation-policy";
+import { hashInvitationToken, invitationState, normalizeEmail, canBootstrapPortal } from "@/lib/invitation-policy";
 import { clerkSessionIsCurrent } from "@/lib/clerk-identity-policy";
 import { getAuthenticatedClerkIdentity } from "@/lib/session";
 import { getPortalDatabaseAvailability } from "@/lib/portal-actor-store";
@@ -20,6 +20,7 @@ export async function connectClerkAccount(form: FormData) {
     redirect(`/sign-in?next=${encodeURIComponent(next)}`);
   }
   if (!identity.emailVerified) redirect(`/auth/continue?next=${encodeURIComponent(next)}&error=verification`);
+  const bootstrap = canBootstrapPortal(identity, process.env.PORTAL_BOOTSTRAP_CLERK_USER_ID);
   if (await getPortalDatabaseAvailability() !== "ready")
     redirect(`/auth/continue?next=${encodeURIComponent(next)}`);
   let failure = "";
@@ -45,14 +46,14 @@ export async function connectClerkAccount(form: FormData) {
       const [invitation] = token ? await tx.select().from(invitations)
         .where(eq(invitations.token, hashInvitationToken(token))).for("share") : [];
       const invited = !!invitation && invitationState(invitation) === "pending" && normalizeEmail(invitation.email) === identity.email;
-      if (!actor && !invited && identity.role !== "admin") throw new Error("invitation");
+      if (!actor && !invited && !bootstrap) throw new Error("invitation");
       if (!actor) [actor] = await tx.insert(portalActors).values({
         clerkUserId: identity.clerkUserId,
-        enrolledAt: identity.role === "admin" ? new Date() : null,
+        enrolledAt: bootstrap ? new Date() : null,
       }).returning();
-      if (!actor.enrolledAt && identity.role === "admin")
+      if (!actor.enrolledAt && bootstrap)
         await tx.update(portalActors).set({ enrolledAt: new Date() }).where(eq(portalActors.id, actor.id));
-      if (!actor.enrolledAt && identity.role !== "admin" && !invited) throw new Error("invitation");
+      if (!actor.enrolledAt && !bootstrap && !invited) throw new Error("invitation");
       if (actor.enrolledAt && !identity.role) throw new Error("role");
     });
   } catch (error) {

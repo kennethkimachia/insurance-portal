@@ -6,7 +6,9 @@ import {
   unique,
   text,
   integer,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { policyTypeEnum } from "./enums";
 import { portalActors } from "./portal-actors";
 import { organizations } from "./organizations";
@@ -35,5 +37,8 @@ export const policies = pgTable(
   },
   (table) => [
     unique("user_policy_type_unique").on(table.userId, table.policyType),
+    uniqueIndex("organization_insurer_reference_unique")
+      .on(table.organizationId, sql`lower(trim(${table.insurerReference}))`)
+      .where(sql`${table.source} = 'manual' and ${table.insurerReference} is not null and trim(${table.insurerReference}) <> ''`),
   ],
 );

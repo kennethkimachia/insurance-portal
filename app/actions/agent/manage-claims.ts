@@ -49,6 +49,11 @@ export async function getMyAssignedClaims() {
       status: claims.status,
       openRequestCount: sql<number>`(SELECT count(*)::int FROM evidence_requests er WHERE er.claim_id = ${claims.id} AND er.status <> 'resolved')`,
       overdueRequestCount: sql<number>`(SELECT count(*)::int FROM evidence_requests er WHERE er.claim_id = ${claims.id} AND er.status <> 'resolved' AND er.due_at < now())`,
+      respondedRequestCount: sql<number>`(SELECT count(*)::int FROM evidence_requests er WHERE er.claim_id = ${claims.id} AND er.status = 'responded')`,
+      unreviewedDocumentCount: sql<number>`(SELECT count(*)::int FROM claim_attachments ca WHERE ca.claim_id = ${claims.id} AND ca.review_status NOT IN ('accepted','waived'))`,
+      nextUpdateAt: sql<string | null>`(SELECT ce.metadata->>'nextUpdateAt' FROM claim_events ce WHERE ce.claim_id = ${claims.id} AND ce.type = 'progress_update' AND ce.visibility = 'public' ORDER BY ce.created_at DESC, ce.id DESC LIMIT 1)`,
+      withdrawalRequestedAt: claims.withdrawalRequestedAt,
+      updatedAt: claims.updatedAt,
       description: claims.description,
       policyType: policies.policyType,
       policyholderId: policies.userId,
@@ -70,6 +75,8 @@ export async function getMyAssignedClaims() {
   return result.map((claim) => ({
     policyholderName: profileFor(profiles, claim.policyholderId).name,
     ...claim,
+    withdrawalRequestedAt: claim.withdrawalRequestedAt?.toISOString() ?? null,
+    updatedAt: claim.updatedAt.toISOString(),
     openRequestCount: closedClaimStatuses.includes(claim.status)
       ? 0
       : claim.openRequestCount,

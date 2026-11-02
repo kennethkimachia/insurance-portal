@@ -45,6 +45,6 @@ export default async function ContinuePage({ searchParams }: {
       <input type="hidden" name="next" value={next} />
       <Button type="submit" className="w-full">Connect account</Button>
     </form>}
-    <p className="mt-4 text-sm text-muted-foreground">Portal enrollment requires an invitation or an administrator role assigned in Clerk. Profiles and roles are managed in Clerk; your policies and claims stay connected to this account.</p>
+    <p className="mt-4 text-sm text-muted-foreground">Portal enrollment requires an invitation. The explicitly configured first administrator can connect during initial setup. Profiles and authentication are managed in Clerk; policies and claims stay connected to this account.</p>
   </AuthShell>;
 }

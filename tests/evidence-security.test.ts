@@ -104,3 +104,16 @@ test("upload capacity releases on failures and limits overlapping requests", () 
   assert.throws(() => reserveUploadSlot("test-upload-user", 1000), /capacity/);
   reserveUploadSlot("test-upload-user", 61_000)();
 });
+
+test("video evidence is accepted only in media categories and must have a recognizable container", () => {
+  for (const [name, mime, bytes] of [
+    ["scene.mp4", "video/mp4", Buffer.from("\0\0\0\x18ftypisom")],
+    ["scene.mov", "video/quicktime", Buffer.from("\0\0\0\x18ftypqt  ")],
+    ["scene.webm", "video/webm", Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0])],
+  ] as const) {
+    assert.equal(inspectEvidenceContent("scene_photos", name, mime, bytes), mime);
+    assert.throws(() => inspectEvidenceContent("driving_license", name, mime, bytes), /accepted file/);
+    assert.throws(() => inspectEvidenceContent("other", name, mime, Buffer.from("<html>fake video</html>")), /content does not match/);
+  }
+  assert.throws(() => inspectEvidenceContent("other", "../scene.mp4", "video/mp4", Buffer.from("0000ftypisom")), /filename/);
+});

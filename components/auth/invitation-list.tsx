@@ -35,6 +35,8 @@ export function InvitationList({
                 {invite.policyType && `· ${invite.policyType}`} · expires{" "}
                 {new Date(invite.expiresAt).toLocaleDateString("en-KE")}
               </p>
+              <p className="mt-1 text-xs text-muted-foreground">{{ admin: "Administrator", head_agent: "Head agent · claims manager", agent: "Agent", user: "Policyholder" }[invite.role]}{invite.policyNumber && ` · Portal reference ${invite.policyNumber}`}</p>
+              {invite.acceptedAt && <p className="mt-1 text-xs text-muted-foreground">Accepted {new Date(invite.acceptedAt).toLocaleString("en-KE", { timeZone: "Africa/Nairobi" })}</p>}
             </div>
             <Badge
               variant={invite.state === "accepted" ? "default" : "outline"}
@@ -43,16 +45,16 @@ export function InvitationList({
             </Badge>
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            {invite.deliveryState === "sandbox"
-              ? "Saved to sandbox inbox; recipient delivery was not attempted."
-              : invite.deliveryState === "sent"
-                ? "Email accepted by provider; recipient delivery unconfirmed."
+            {invite.deliveryState === "sent"
+                ? "Invitation email requested through Clerk; recipient delivery unconfirmed."
                 : invite.deliveryState === "failed"
                   ? `Delivery failed: ${invite.deliveryError || "Retry the invitation."}`
                   : "Awaiting delivery attempt."}
           </p>
           {(invite.state === "pending" || invite.state === "expired") && (
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 space-y-2">
+            <p className="text-xs text-muted-foreground">Resending replaces the previous link. Allow one minute between emails. Revoking stops future acceptance; it does not remove access already accepted.</p>
+            <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
                 variant="outline"
@@ -95,6 +97,7 @@ export function InvitationList({
               >
                 Revoke
               </Button>
+            </div>
             </div>
           )}
         </div>

@@ -72,6 +72,7 @@ export function demoWorkspace(
   const staff = role !== "user";
   return {
     role,
+    storageReady: false,
     claim: {
       id: DEMO_IDS.claim,
       claimNumber: "DEMO-CLAIM-001",
@@ -130,6 +131,7 @@ export function demoWorkspace(
         id: "demo-event-1",
         claimId: DEMO_IDS.claim,
         actorId: DEMO_IDS.user,
+        authorName: "Amina Demo",
         type: "submitted",
         visibility: "public",
         content:
@@ -141,10 +143,18 @@ export function demoWorkspace(
         id: "demo-event-2",
         claimId: DEMO_IDS.claim,
         actorId: DEMO_IDS.agent,
+        authorName: "Sam Demo",
         type: "assigned",
         visibility: "public",
         content: "Sam Demo was assigned to review your report.",
         metadata: {},
+        createdAt: time,
+      },
+      {
+        id: "demo-progress-update", claimId: DEMO_IDS.claim, actorId: DEMO_IDS.agent, authorName: "Sam Demo",
+        type: "progress_update", visibility: "public",
+        content: "Evidence review started\nYour report is assigned and the uploaded scene photo is waiting for inspection.",
+        metadata: { kind: "evidence", visibility: "public", title: "Evidence review started", message: "Your report is assigned and the uploaded scene photo is waiting for inspection.", nextAction: "Reply to the police-report request with the evidence you have, or explain what is unavailable.", responsibleParty: "policyholder", waitingReason: "Police-report availability needs confirmation.", nextUpdateAt: "2026-12-01T12:00:00+03:00", appointmentAt: "", appointmentLocation: "", contactDetails: "Use the claim messages to reach Sam Demo." },
         createdAt: time,
       },
     ],

@@ -19,7 +19,6 @@ import { eq, sql, desc, notInArray, and } from "drizzle-orm";
 import { requireSession } from "@/lib/session";
 import { permissions, requirePermission } from "@/lib/permissions";
 import { listPortalInvitations } from "@/lib/invitations";
-import { getEmailMode } from "@/lib/email";
 
 export default async function AdminDashboard() {
   const actor = await requireSession();
@@ -145,13 +144,9 @@ export default async function AdminDashboard() {
 
         <p className="mb-6 rounded-lg border bg-card p-4 text-sm text-muted-foreground">
           The portal operator administers access to separate insurance
-          organizations. Email mode:{" "}
-          <strong className="text-foreground">{getEmailMode()}</strong>.{" "}
-          {getEmailMode() === "sandbox"
-            ? "Messages go to the configured test inbox; recipients do not receive them."
-            : getEmailMode() === "disabled"
-              ? "Configure sandbox delivery before demonstrating invitation activation."
-              : "Provider acceptance is recorded; recipient delivery remains unconfirmed."}
+          organizations. Clerk manages authentication and invitation emails. Configure
+          Invite-only access mode in Clerk before onboarding. The invitation list
+          records email requests and failures; recipient delivery is not confirmed here.
         </p>
 
         {pendingRoleUpdates.length > 0 && <section className="portal-panel mb-6 space-y-4 p-5">

@@ -47,8 +47,11 @@ import {
 import { addClaimNote } from "@/app/actions/agent/manage-claims";
 import { recordClaimAssessment } from "@/app/actions/agent/assessment";
 import { StatusEditor } from "@/components/dashboard/agent/status-editor";
-import { ArrowLeft, Download, Mail, Phone, Check, Loader2 } from "lucide-react";
+import { ArrowLeft, Download, Mail, Phone, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { ClaimUpdateComposer } from "./claim-update-composer";
+import { ProgressEditor } from "@/components/dashboard/agent/progress-editor";
+import { claimJourney, latestPublicClaimUpdate, claimUpdateSchema, updateIsOverdue, RESPONSIBLE_PARTIES } from "@/lib/claim-communication";
 
 export type ClaimWorkspaceData = Awaited<ReturnType<typeof getClaimWorkspace>>;
 const formatDate = (value: string) =>
@@ -223,6 +226,11 @@ export function ClaimWorkspace({
     "awaiting_information",
   ].includes(claim.status);
   const openRequests = requests.filter((r) => r.status !== "resolved");
+  const [activityFilter, setActivityFilter] = useState("all");
+  const latestUpdate = latestPublicClaimUpdate(events);
+  const journey = claimJourney(claim.status, !!claim.assignedAgentId);
+  const unreviewed = documents.filter((d) => !["accepted", "waived"].includes(d.reviewStatus));
+  const repliedRequests = openRequests.filter((r) => r.status === "responded");
   const [uploads, setUploads] = useState<DocumentUploads>({});
   const [uploading, setUploading] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -395,7 +403,9 @@ export function ClaimWorkspace({
         <CardHeader>
           <CardTitle>What happens next</CardTitle>
           <CardDescription>
-            {claimNextAction(claim.status, openRequests.length)}
+            {openRequests.length > 0 && repliedRequests.length === openRequests.length && !closed
+              ? staff ? "Review the policyholder’s replies, then resolve the information requests or explain what is still needed." : "Your replies have been received. Your agent will review them and let you know if anything else is needed."
+              : claimNextAction(claim.status, openRequests.filter((r) => r.status === "open").length)}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
@@ -424,11 +434,27 @@ export function ClaimWorkspace({
           </p>
         </CardContent>
       </Card>
+      {staff && <Card id="review-summary"><CardHeader><CardTitle>Review desk</CardTitle><CardDescription>Start with outstanding work, inspect the original report, then communicate the next action.</CardDescription></CardHeader><CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <a href={reviewOpen && unreviewed.length ? "#document-review" : "#documents"} className="rounded-lg border p-3 text-sm">{unreviewed.length} documents {closed ? "without a review decision" : "need a decision"}</a>
+          <a href="#information-requests" className="rounded-lg border p-3 text-sm">{repliedRequests.length} replies await review</a>
+          <a href={closed ? "#claim-activity" : "#publish-update"} className="rounded-lg border p-3 text-sm">{latestUpdate ? `Last public update: ${formatDate(latestUpdate.publishedAt)}` : "No structured public update yet"}</a>
+        </div>
+        {!closed && claim.withdrawalRequestedAt && <p className="text-sm font-medium text-amber-700 dark:text-amber-400">A withdrawal request needs a manager’s review.</p>}
+        <nav aria-label="Claim review sections" className="flex flex-wrap gap-4 text-sm text-primary underline">
+          <a href="#original-report">Original report</a><a href="#documents">Evidence</a>{(canAssess || claim.assessmentSummary) && <a href="#assessment">Assessment</a>}<a href="#claim-activity">Activity</a>{!closed && <a href="#publish-update">Publish update</a>}
+        </nav>
+      </CardContent></Card>}
+      {latestUpdate && <Card className="border-primary/25"><CardHeader><CardTitle>Latest policyholder update</CardTitle><CardDescription>{latestUpdate.title} · {formatDate(latestUpdate.publishedAt)}</CardDescription></CardHeader><CardContent className="space-y-3 text-sm">
+        <p className="whitespace-pre-wrap">{latestUpdate.message}</p>
+        <UpdateDetails update={latestUpdate} />
+        {updateIsOverdue(latestUpdate.nextUpdateAt, claim.status) && <p className="font-medium text-amber-700 dark:text-amber-400">The expected update time has passed. {staff ? "Publish a fresh update explaining the current position." : "Your claims team should provide a fresh update. This does not change your claim’s outcome."}</p>}
+      </CardContent></Card>}
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(250px,1fr)]">
         <div className="min-w-0 space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Information requests</CardTitle>
+              <CardTitle id="information-requests">Information requests</CardTitle>
               <CardDescription>
                 Explain unavailable evidence in your response. A missing
                 document does not remove your report.
@@ -470,9 +496,10 @@ export function ClaimWorkspace({
                         : ""}
                     </p>
                   )}
+                  {request.resolvedAt && <p className="text-xs text-muted-foreground">Completed {formatDate(request.resolvedAt)}</p>}
                   {request.response && (
                     <p className="rounded-md bg-muted p-3 text-sm">
-                      Your response: {request.response}
+                      {staff ? "Policyholder response" : "Your response"}: {request.response}
                     </p>
                   )}
                   {request.status !== "resolved" &&
@@ -526,6 +553,7 @@ export function ClaimWorkspace({
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {!demo && !data.storageReady && <p role="status" className="rounded-lg border p-3 text-sm">Evidence storage is not available yet. Your claim remains saved. You can select files and return to upload them when storage is configured.</p>}
                 {unselectedReminders.length > 0 && (
                   <p className="text-sm text-muted-foreground">
                     Files selected in your original report need selecting again:{" "}
@@ -537,14 +565,14 @@ export function ClaimWorkspace({
                   categories={categories}
                   uploads={uploads}
                   onUploadsChange={changeUploads}
-                  onRetry={(id) => sendFiles([id])}
+                  onRetry={data.storageReady ? (id) => sendFiles([id]) : undefined}
                   disabled={uploading || demo}
                   lossItems={lossItems}
                 />
                 <Button
                   disabled={
                     uploading ||
-                    demo ||
+                    demo || !data.storageReady ||
                     !Object.values(uploads).some((files) =>
                       files.some((file) => file.status !== "uploaded"),
                     )
@@ -564,7 +592,7 @@ export function ClaimWorkspace({
             ) && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Document inspection</CardTitle>
+                  <CardTitle id="document-review">Document inspection</CardTitle>
                   <CardDescription>
                     Download files for inspection before accepting them.
                     Acceptance records a manual review; it is not an automated
@@ -587,7 +615,7 @@ export function ClaimWorkspace({
                 </CardContent>
               </Card>
             )}
-          <Card>
+          <Card id="claim-activity">
             <CardHeader>
               <CardTitle>
                 {staff ? "Claim activity" : "Your claim history"}
@@ -599,13 +627,20 @@ export function ClaimWorkspace({
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
+              <label className="block text-sm">Filter activity
+                <select value={activityFilter} onChange={(e) => setActivityFilter(e.target.value)} className="ml-3 rounded-md border bg-background p-2">
+                  <option value="all">All activity</option><option value="updates">Progress updates</option><option value="documents">Documents</option><option value="messages">Messages</option>{staff && <option value="internal">Internal only</option>}
+                </select>
+              </label>
               {[
                 ...events.map((event) => ({
                   id: event.id,
                   content: event.content,
                   at: event.createdAt,
                   visibility: event.visibility,
-                  label: readable(event.type.replaceAll("_", " ")),
+                  label: `${readable(event.type.replaceAll("_", " "))} · ${event.authorName}`,
+                  kind: event.type,
+                  update: event.type === "progress_update" ? claimUpdateSchema.safeParse(event.metadata) : null,
                 })),
                 ...notes.map((note) => ({
                   id: note.id,
@@ -613,8 +648,10 @@ export function ClaimWorkspace({
                   at: note.createdAt,
                   visibility: note.visibility,
                   label: `Message from ${note.authorName}`,
+                  kind: "message", update: null,
                 })),
               ]
+                .filter((item) => activityFilter === "all" || (activityFilter === "updates" ? item.kind === "progress_update" : activityFilter === "documents" ? item.kind.startsWith("document_") : activityFilter === "messages" ? item.kind === "message" || item.kind === "amendment" : item.visibility === "internal"))
                 .sort((a, b) => b.at.localeCompare(a.at))
                 .map((item) => (
                   <div
@@ -628,11 +665,12 @@ export function ClaimWorkspace({
                     <p className="mt-1 whitespace-pre-wrap break-words text-sm">
                       {item.content}
                     </p>
+                    {item.update?.success && <div className="mt-3"><UpdateDetails update={item.update.data} /></div>}
                   </div>
                 ))}
             </CardContent>
           </Card>
-          <Card>
+          <Card id="original-report">
             <CardHeader>
               <CardTitle>Original incident report</CardTitle>
               <CardDescription>
@@ -654,6 +692,7 @@ export function ClaimWorkspace({
               </details>
             </CardContent>
           </Card>
+          {!closed && !staff && <Card><CardHeader><CardTitle>Ask your claims team</CardTitle><CardDescription>For questions or general information. Use the request reply above when answering a specific information request.</CardDescription></CardHeader><CardContent><TextAction id="policyholder-message" title="Message to your agent" label="Your question or update" minLength={2} button="Send message" disabled={disabled} onSubmit={(text) => addClaimNote(claim.id, text, "public")} /></CardContent></Card>}
           {!closed && !staff && (
             <Card>
               <CardHeader>
@@ -717,32 +756,11 @@ export function ClaimWorkspace({
               )}
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Progress</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              {progress.map((step) => (
-                <div key={step.id} className="flex gap-3">
-                  <span
-                    className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border ${step.isCompleted ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-                  >
-                    {step.isCompleted ? (
-                      <Check className="size-3" />
-                    ) : (
-                      <span className="text-xs">{step.stepOrder}</span>
-                    )}
-                  </span>
-                  <div>
-                    <p className="text-sm font-medium">{step.label}</p>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                      {step.description}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+          <Card><CardHeader><CardTitle>Claim journey</CardTitle><CardDescription>Milestones describe recorded work, not a promised percentage or completion date.</CardDescription></CardHeader><CardContent className="space-y-4">
+            {journey.map((step) => <div key={step.label} className="flex gap-3"><span className="mt-1" aria-hidden="true">{step.state === "complete" ? "✓" : step.state === "not_applicable" || step.state === "ended" ? "—" : "○"}</span><div><p className="text-sm font-medium">{step.label} <span className="text-xs font-normal text-muted-foreground">· {step.state.replaceAll("_", " ")}</span></p><p className="text-xs leading-5 text-muted-foreground">{step.detail}</p></div></div>)}
+          </CardContent></Card>
+          <ProgressEditor key={`${claim.id}:${claim.version}`} claimId={claim.id} claimNumber={claim.claimNumber} initialSteps={progress.filter((s) => !s.isSystem)} role={role} readOnly={demo || !staff || closed} />
+          {staff && !closed && <ClaimUpdateComposer claimId={claim.id} disabled={demo || uploading} />}
           {(claim.outcomeReason || claim.settlementReference) && (
             <Card>
               <CardHeader>
@@ -815,7 +833,7 @@ export function ClaimWorkspace({
           {staff && (canAssess || claim.assessmentSummary) && (
             <Card>
               <CardHeader>
-                <CardTitle>Assessment</CardTitle>
+                <CardTitle id="assessment">Assessment</CardTitle>
                 <CardDescription>
                   Internal review summary. Estimates do not establish coverage
                   or payment.
@@ -1078,4 +1096,15 @@ function DocumentReview({
       />
     </div>
   );
+}
+
+function UpdateDetails({ update }: { update: import("@/lib/claim-communication").ClaimUpdate }) {
+  return <dl className="space-y-2 text-sm">
+    <div><dt className="font-medium">Who acts next</dt><dd>{RESPONSIBLE_PARTIES[update.responsibleParty]}</dd></div>
+    <div><dt className="font-medium">Next action</dt><dd className="whitespace-pre-wrap">{update.nextAction}</dd></div>
+    {update.waitingReason && <div><dt className="font-medium">Waiting / delay</dt><dd className="whitespace-pre-wrap">{update.waitingReason}</dd></div>}
+    {update.nextUpdateAt && <div><dt className="font-medium">Next update expected</dt><dd>{formatDate(update.nextUpdateAt)} EAT</dd></div>}
+    {update.appointmentAt && <div><dt className="font-medium">Arranged appointment</dt><dd>{formatDate(update.appointmentAt)} EAT{update.appointmentLocation && ` · ${update.appointmentLocation}`}</dd></div>}
+    {update.contactDetails && <div><dt className="font-medium">Contact / instructions</dt><dd className="whitespace-pre-wrap">{update.contactDetails}</dd></div>}
+  </dl>;
 }

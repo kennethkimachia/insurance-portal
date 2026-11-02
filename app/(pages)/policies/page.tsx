@@ -95,7 +95,7 @@ export default async function PoliciesPage() {
                   {policy.status}
                 </Badge>
               </div>
-              <CardTitle className="break-all">{policy.policyNumber}</CardTitle>
+              <CardTitle className="break-all">Portal reference: {policy.policyNumber}</CardTitle>
               <CardDescription>
                 {policy.policyholderName} ? {policy.organizationName}
               </CardDescription>
@@ -110,7 +110,7 @@ export default async function PoliciesPage() {
                 </div>
                 <div>
                   <dt className="text-xs text-muted-foreground">
-                    Insurer reference
+                    Insurer policy number
                   </dt>
                   <dd className="break-all">
                     {policy.insurerReference || "Not yet recorded"}

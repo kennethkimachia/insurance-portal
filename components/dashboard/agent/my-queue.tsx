@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
+import { claimAttention, compareQueueClaims } from "@/lib/claim-queue-policy";
 import {
   statusLabels,
   claimStatuses,
@@ -29,6 +30,11 @@ interface QueueClaim {
   createdAt: string;
   openRequestCount?: number;
   overdueRequestCount?: number;
+  respondedRequestCount?: number;
+  unreviewedDocumentCount?: number;
+  withdrawalRequestedAt?: string | null;
+  nextUpdateAt?: string | null;
+  updatedAt?: string;
 }
 interface MyQueueProps {
   claims: QueueClaim[];
@@ -49,11 +55,14 @@ export function MyQueue({
   const [search, setSearch] = useState("");
   const [stage, setStage] = useState("all");
   const [product, setProduct] = useState("all");
+  const [attention, setAttention] = useState("all");
+  const [sort, setSort] = useState("priority");
   const query = search.trim().toLowerCase();
   const filtered = claims.filter((claim) => {
     const closed = closedClaimStatuses.includes(claim.status);
     return (
       (filter === "all" || (filter === "active" ? !closed : closed)) &&
+      (attention === "all" || claimAttention(claim).category === attention) &&
       (stage === "all" || claim.status === stage) &&
       (product === "all" || claim.policyType === product) &&
       (!query ||
@@ -61,7 +70,7 @@ export function MyQueue({
           .toLowerCase()
           .includes(query))
     );
-  });
+  }).sort((a,b) => sort === "priority" ? compareQueueClaims(a,b) : sort === "oldest" ? a.createdAt.localeCompare(b.createdAt) : b.createdAt.localeCompare(a.createdAt));
   return (
     <Card>
       <CardHeader>
@@ -70,6 +79,9 @@ export function MyQueue({
           {description ||
             `${claims.length} assigned claim${claims.length === 1 ? "" : "s"}`}
         </CardDescription>
+        <div className="grid grid-cols-3 gap-2 text-xs">{[["review", "Need review"], ["followup", "Follow up"], ["waiting", "Waiting"]].map(([value,label]) => <button type="button" key={value} aria-pressed={attention === value} className="rounded-lg border p-3 text-left" onClick={() => {setAttention(attention === value ? "all" : value); setFilter("active");}}><strong className="block text-lg">{claims.filter((c) => claimAttention(c).category === value).length}</strong>{label}</button>)}</div>
+        <label className="text-xs text-muted-foreground">Order claims<select aria-label="Sort assigned claims" value={sort} onChange={(e) => setSort(e.target.value)} className="ml-2 rounded-md border bg-background p-2"><option value="priority">Needs attention first</option><option value="oldest">Oldest first</option><option value="newest">Newest first</option></select></label>
+        {attention !== "all" && <Button size="sm" variant="ghost" onClick={() => setAttention("all")}>Clear attention filter</Button>}
         <Input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
@@ -150,6 +162,8 @@ export function MyQueue({
                   · {claim.policyType}
                 </span>
               </p>
+              <p className="text-xs font-medium text-primary">{claimAttention(claim).label}</p>
+              {claim.nextUpdateAt && <p className="text-xs text-muted-foreground">Next update expected: {new Date(claim.nextUpdateAt).toLocaleString("en-KE", { timeZone: "Africa/Nairobi" })} EAT</p>}
               <p className="line-clamp-2 text-xs text-muted-foreground">
                 {claim.description}
               </p>
@@ -158,7 +172,7 @@ export function MyQueue({
                   {claim.openRequestCount} open information request
                   {claim.openRequestCount === 1 ? "" : "s"}
                   {claim.overdueRequestCount
-                    ? ` ? ${claim.overdueRequestCount} overdue`
+                    ? ` · ${claim.overdueRequestCount} overdue`
                     : ""}
                 </p>
               )}
