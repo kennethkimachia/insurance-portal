@@ -42,8 +42,8 @@ export const invitations = pgTable("invitations", {
     insurerReference: string | null;
     coverageStart: string | null;
     coverageEnd: string | null;
-    insuredAsset: string;
-    coverageSummary: string;
+    insuredAsset: string | null;
+    coverageSummary: string | null;
     source: "manual" | "demo";
   }>(),
   deliveryState: varchar("delivery_state", { length: 20 })

@@ -72,7 +72,7 @@ export async function deliverInvitation(invitation: Invitation, token: string) {
     return {
       deliveryState,
       message: deliveryState === "sent"
-        ? "Invitation email requested through Clerk. Recipient delivery is not yet confirmed."
+        ? "Invitation email requested."
         : `Invitation saved. ${deliveryError}`,
     };
   });
@@ -139,8 +139,8 @@ export async function createPortalInvitation(input: {
         .where(and(eq(agentOrganizations.agentId, input.actor.id), eq(agentOrganizations.organizationId, input.organizationId))).for("share");
       if (!membership) throw new Error("You do not have access to this organization.");
     }
-    if (input.purpose === "policyholder" && (!input.enrollmentPolicyType || !input.policyProfile || !input.enrollmentPhone))
-      throw new Error("Complete the policy profile before inviting its holder.");
+    if (input.purpose === "policyholder" && (!input.enrollmentPolicyType || !input.policyProfile))
+      throw new Error("Choose a policy type before sending the invitation.");
     // Serialize conflicting roles and organizations for the same invited identity.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`invitation:${email}`}, 0))`);
     // Serialize invitation creation per organization, including duplicate checks.

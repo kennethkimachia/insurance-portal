@@ -5,6 +5,7 @@ import { useSyncExternalStore } from "react";
 import { Header } from "@/components/navigation/header/header";
 import { AppSidebar } from "@/components/navigation/sidebar/sidebar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { DemoRoleSwitcher } from "@/components/navigation/demo-role-switcher";
 
 type UserRole = "admin" | "head_agent" | "agent" | "user";
 
@@ -19,6 +20,7 @@ interface NavigationShellProps {
     email: string;
     image?: string | null;
     role: UserRole;
+    demo?: { accountRole: UserRole; active: boolean };
   };
   currentOrganization?: { id: string; name: string; code: string };
   organizations?: { id: string; name: string; code: string }[];
@@ -65,7 +67,12 @@ export function NavigationShell({
           organizations={organizations}
           onOrganizationChange={onOrganizationChange}
         />
-        <main className="portal-content min-w-0 flex-1 bg-background">{children}</main>
+        <main className="portal-content min-w-0 flex-1 bg-background">
+          {user.demo && (
+            <DemoRoleSwitcher role={user.role} accountRole={user.demo.accountRole} active={user.demo.active} />
+          )}
+          {children}
+        </main>
       </SidebarInset>
     </SidebarProvider>
   );

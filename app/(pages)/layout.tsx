@@ -75,11 +75,12 @@ export default async function DashboardLayout({
   const activeOrganizationId = await getActiveOrganizationId(sessionUser);
   return (
     <DashboardLayoutClient
-      key={`${sessionUser.id}:${activeOrganizationId ?? "none"}`}
+      key={`${sessionUser.id}:${sessionUser.role}:${activeOrganizationId ?? "none"}`}
       user={{
         name: sessionUser.name,
         email: sessionUser.email,
         role: sessionUser.role,
+        demo: sessionUser.demo,
       }}
       organizations={orgs}
       initialOrganizationId={activeOrganizationId ?? undefined}

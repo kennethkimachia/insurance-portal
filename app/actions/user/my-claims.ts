@@ -26,6 +26,7 @@ import {
 import { CLOSED_CLAIM_STATUSES } from "@/lib/claim-record-policy";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { isDemoAgent } from "@/lib/demo-role-policy";
 
 export async function getMyPolicies() {
   const session = await requireSession();
@@ -211,14 +212,16 @@ export async function getMyClaimProgress(id: string) {
 }
 
 export async function getMyClaimAgent(id: string) {
+  const session = await requireSession();
   const claim = await requireClaimAccess(
-    await requireSession(),
+    session,
     z.string().uuid().parse(id),
   );
   if (!claim.assignedAgentId) return null;
   const [actor] = await db.select().from(portalActors).where(eq(portalActors.id, claim.assignedAgentId)).limit(1);
   const profile = await getActorProfile(claim.assignedAgentId);
-  if (!actor || actor.suspendedAt || actor.retiredAt || actor.pendingRoleOperationId || !profile.available || profile.banned || profile.role !== "agent") return null;
+  if (!actor || actor.suspendedAt || actor.retiredAt || actor.pendingRoleOperationId || !profile.available || profile.banned ||
+      (profile.role !== "agent" && !isDemoAgent(session, actor.id))) return null;
   return { id: actor.id, name: profile.name, email: profile.email, phone: profile.phone };
 }
 

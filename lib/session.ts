@@ -6,6 +6,8 @@ import { getClerkProfile } from "./clerk-directory";
 import { actorAllowsAccess } from "./clerk-profile-policy";
 import { getPortalActorRecord } from "./portal-actor-store";
 import { portalDatabaseMessages } from "./portal-database-policy";
+import { canSwitchDemoRoles } from "./demo-role-policy";
+import { getDemoRole } from "./demo-role-session";
 
 export interface SessionUser {
   id: string;
@@ -19,6 +21,7 @@ export interface SessionUser {
   organizationId: string | null;
   emailVerified: boolean;
   phone: string | null;
+  demo?: { accountRole: Role; active: boolean };
 }
 
 export const getAuthenticatedClerkIdentity = cache(async () => {
@@ -50,9 +53,16 @@ const readSessionUser = cache(async (): Promise<SessionUser | null> => {
   };
 });
 
-export async function getSessionUser(): Promise<SessionUser | null> {
-  return readSessionUser();
-}
+export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
+  const account = await readSessionUser();
+  if (!account || !canSwitchDemoRoles(account.role, process.env)) return account;
+  const role = await getDemoRole(account);
+  return {
+    ...account,
+    role: role ?? account.role,
+    demo: { accountRole: account.role, active: role !== null },
+  };
+});
 
 export async function requireSession(): Promise<SessionUser> {
   const identity = await getSessionUser();

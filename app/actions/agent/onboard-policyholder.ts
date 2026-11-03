@@ -14,41 +14,20 @@ export async function onboardPolicyholder(formData: FormData) {
     const actor = await requireSession();
     requirePermission(actor.role, permissions.POLICYHOLDER_INVITE);
     const parsed = policyholderOnboardingSchema.safeParse(
-      { ...Object.fromEntries(
-        [
-          "fullName",
-          "email",
-          "phone",
-          "policyType",
-          "organizationId",
-          "source",
-          "insurerReference",
-          "coverageStart",
-          "coverageEnd",
-          "insuredAsset",
-          "coverageSummary",
-        ].map((key) => [key, formData.get(key) ?? ""]),
-      ), status: "active", policyConfirmed: formData.get("policyConfirmed") === "true" },
+      Object.fromEntries(
+        ["fullName", "email", "policyType", "organizationId"].map((key) => [
+          key,
+          formData.get(key) ?? "",
+        ]),
+      ),
     );
     if (!parsed.success)
       return {
         success: false as const,
-        error: "Check the policyholder and policy details.",
+        error: "Check the name, email, and policy type.",
         fieldErrors: parsed.error.flatten().fieldErrors,
       };
-    const {
-      fullName,
-      email,
-      phone,
-      policyType,
-      organizationId,
-      source,
-      insurerReference,
-      coverageStart,
-      coverageEnd,
-      insuredAsset,
-      coverageSummary,
-    } = parsed.data;
+    const { fullName, email, policyType, organizationId } = parsed.data;
     await requireOrganizationAccess(actor, organizationId);
     const result = await createPortalInvitation({
       actor,
@@ -57,15 +36,14 @@ export async function onboardPolicyholder(formData: FormData) {
       purpose: "policyholder",
       organizationId,
       enrollmentName: fullName,
-      enrollmentPhone: phone!,
       enrollmentPolicyType: policyType,
       policyProfile: {
-        source,
-        insurerReference: insurerReference || null,
-        coverageStart: coverageStart || null,
-        coverageEnd: coverageEnd || null,
-        insuredAsset,
-        coverageSummary,
+        source: "demo",
+        insurerReference: null,
+        coverageStart: null,
+        coverageEnd: null,
+        insuredAsset: null,
+        coverageSummary: null,
       },
     });
     revalidatePath("/dashboard", "layout");

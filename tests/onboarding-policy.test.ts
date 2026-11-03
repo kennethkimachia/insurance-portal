@@ -13,10 +13,8 @@ const expiresAt = new Date("2026-11-08T12:00:00Z");
 const holder = { purpose: "policyholder", role: "user" as const, organizationId: "insurer-a", enrollmentPolicyType: "motor" };
 const staff = { purpose: "staff", role: "agent" as const, organizationId: "insurer-a" };
 const record = {
-  status: "active", source: "manual", insurerReference: "INS-2026-123", coverageStart: "2026-01-01", coverageEnd: "2026-12-31",
-  insuredAsset: "Synthetic vehicle KXX 000A", coverageSummary: "Synthetic comprehensive policy",
-  fullName: "Test Holder", email: "holder@example.test", phone: "+254 712 345 678", policyType: "motor",
-  organizationId: "39f09d04-ae45-4696-a0db-0cd3b490cdca", policyConfirmed: true,
+  fullName: "Test Holder", email: "holder@example.test", policyType: "motor",
+  organizationId: "39f09d04-ae45-4696-a0db-0cd3b490cdca",
 };
 
 function client() {
@@ -30,15 +28,31 @@ function client() {
   return { api, created, revoked };
 }
 
-test("manual onboarding requires real policy details, calendar dates, and explicit staff confirmation", () => {
-  const parsed = policyholderOnboardingSchema.parse(record);
-  assert.equal(parsed.phone, "+254712345678");
+test("prototype invitations need only a name, email, policy type, and organization", () => {
+  for (const policyType of ["motor", "burglary"]) {
+    const input = { ...record, policyType };
+    assert.deepEqual(policyholderOnboardingSchema.parse(input), input);
+  }
+  assert.deepEqual(
+    policyholderOnboardingSchema.parse({ ...record, fullName: "  Test Holder  ", email: "  holder@example.test  " }),
+    record,
+  );
+});
+
+test("prototype invitations still validate the invited identity and policy type", () => {
   for (const override of [
-    { insurerReference: "" }, { coverageStart: "" }, { coverageStart: "2026-02-30" },
-    { coverageEnd: "2025-12-31" }, { policyConfirmed: false }, { policyConfirmed: "true" },
-    { email: "invalid" }, { phone: "123" }, { source: "insurer_verified" },
+    { fullName: "" }, { fullName: " " }, { fullName: "x" }, { fullName: "x".repeat(151) },
+    { email: "invalid" }, { email: "" }, { policyType: "home" }, { policyType: "" },
+    { organizationId: "" }, { organizationId: "not-an-organization" },
   ]) assert.equal(policyholderOnboardingSchema.safeParse({ ...record, ...override }).success, false);
-  assert.equal(policyholderOnboardingSchema.safeParse({ ...record, source: "demo", insurerReference: "", coverageStart: "", coverageEnd: "" }).success, true);
+});
+
+test("prototype invitation input strips extra policy details and staff roles", () => {
+  assert.deepEqual(policyholderOnboardingSchema.parse({
+    ...record, role: "admin", source: "manual", insurerReference: "INS-123",
+    coverageStart: "invalid", coverageEnd: "", insuredAsset: "", coverageSummary: "",
+    phone: "", policyConfirmed: false,
+  }), record);
 });
 
 test("policy references distinguish manual and demo records and contain no personal identifiers", () => {

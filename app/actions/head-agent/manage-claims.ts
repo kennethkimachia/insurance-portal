@@ -25,6 +25,7 @@ import {
   type ClaimStatus,
 } from "@/lib/claim-workflow";
 import { revalidatePath } from "next/cache";
+import { isDemoAgent } from "@/lib/demo-role-policy";
 
 export async function getUnassignedClaims(organizationId: string) {
   const session = await requireSession();
@@ -67,7 +68,7 @@ export async function getAgentWorkloads(organizationId: string) {
     .innerJoin(agentOrganizations, eq(agentOrganizations.agentId, portalActors.id))
     .where(eq(agentOrganizations.organizationId, organizationId));
   const agents = (await hydrateActors(agentRows.map((row) => row.portal_actors)))
-    .filter((agent) => agent.role === "agent" && agent.emailVerified && !agent.banned && actorAllowsAccess(agent, Date.now()));
+    .filter((agent) => (agent.role === "agent" || isDemoAgent(session, agent.id)) && agent.emailVerified && !agent.banned && actorAllowsAccess(agent, Date.now()));
   return Promise.all(
     agents.map(async (agent) => {
       const activeWhere = and(
@@ -175,7 +176,9 @@ async function changeAssignment(
     await db.transaction(async (tx) => {
       const [targetActor] = await tx.select().from(portalActors).where(eq(portalActors.id, agentId)).for("update");
       const targetProfile = await getActorProfile(agentId);
-      if (!targetActor || !actorAllowsAccess(targetActor, Date.now()) || targetProfile.role !== "agent" || !targetProfile.emailVerified || targetProfile.banned)
+      if (!targetActor || !actorAllowsAccess(targetActor, Date.now()) ||
+          (targetProfile.role !== "agent" && !isDemoAgent(session, agentId)) ||
+          !targetProfile.emailVerified || targetProfile.banned)
         throw new Error("Choose an active agent");
       const target = { id: targetActor.id, name: targetProfile.name };
       const [membership] = await tx

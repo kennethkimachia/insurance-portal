@@ -11,6 +11,7 @@ interface DashboardLayoutClientProps {
     name: string;
     email: string;
     role: UserRole;
+    demo?: { accountRole: UserRole; active: boolean };
   };
   organizations: { id: string; name: string; code: string }[];
   initialOrganizationId?: string;

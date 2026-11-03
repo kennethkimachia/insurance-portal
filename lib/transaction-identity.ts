@@ -5,6 +5,7 @@ import { eq, inArray } from "drizzle-orm";
 import type { SessionUser } from "./session";
 import { readCurrentClerkProfile } from "./clerk-directory";
 import { actorAllowsAccess } from "./clerk-profile-policy";
+import { getDemoRole } from "./demo-role-session";
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -12,13 +13,14 @@ type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export async function assertCurrentActor(tx: Transaction, actor: SessionUser) {
   const [identity] = await tx.select().from(portalActors).where(eq(portalActors.id, actor.id)).limit(1);
   const profile = await readCurrentClerkProfile(actor.clerkUserId);
+  const role = (await getDemoRole({ ...profile, clerkSessionId: actor.clerkSessionId })) ?? profile.role;
   const createdAt = identity?.sessionsValidAfter && actor.sessionCreatedAt === null
     ? (await (await clerkClient()).sessions.getSession(actor.clerkSessionId)).createdAt : actor.sessionCreatedAt;
   if (!identity || identity.clerkUserId !== actor.clerkUserId || !actorAllowsAccess(identity, createdAt) ||
-      !profile.available || profile.banned || !profile.emailVerified || profile.role !== actor.role)
+      !profile.available || profile.banned || !profile.emailVerified || role !== actor.role)
     throw new Error("Your access changed. Sign in again before continuing.");
   const [enrollment] = await tx.select().from(policyholderEnrollments).where(eq(policyholderEnrollments.actorId, actor.id)).limit(1);
-  return { ...identity, role: profile.role, emailVerified: true, email: profile.email, name: profile.name,
+  return { ...identity, role, emailVerified: true, email: profile.email, name: profile.name,
     organizationId: enrollment?.organizationId || null, phone: enrollment?.phone || profile.phone };
 }
 

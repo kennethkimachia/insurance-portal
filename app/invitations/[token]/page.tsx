@@ -139,7 +139,9 @@ export default async function InvitationPage({
             Accepting associates this verified account with the organization and
             access shown above.{" "}
             {invitation.purpose === "policyholder" &&
-              "Check the policy details above. Contact the sender if anything is incorrect. Your agent-recorded contact details and policy will be saved when you accept. This activates portal access and does not purchase insurance or confirm coverage for a claim."}
+              (invitation.source === "demo"
+                ? "A demo policy will be added so you can try the claims portal."
+                : "Your policy will be saved when you accept. Contact the sender if the details above are incorrect.")}
           </p>
           <AcceptInvitation token={token} />
         </div>

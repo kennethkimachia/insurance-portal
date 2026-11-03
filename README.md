@@ -1,6 +1,6 @@
 # Insurance claims portal
 
-An invitation-only insurance claims prototype for policyholders with existing insurer policies. It supports **Motor and Burglary only**, with four roles: policyholder, agent, claims manager and platform administrator.
+An invitation-only insurance claims prototype for a school project. It supports **Motor and Burglary only**, with four roles: policyholder, agent, claims manager and platform administrator.
 
 The portal provides verified invitation enrollment, draft/resume and immediate incident reporting, private categorized evidence with retry and manual inspection, claim detail pages, information requests and replies, public/internal activity, notifications, controlled assignments/outcomes, recorded withdrawal, and manual report export. Insurer integration and payments are deferred; manual/demo policy records, handoffs and outcomes are labeled.
 
@@ -25,6 +25,19 @@ Existing cloud databases require a **manual, reviewed database upgrade** before 
 
 ## Synthetic preview
 
+In local development, signed-in agents, claims managers, and administrators have
+a **Demo role** selector above the dashboard. Choose Policyholder, Agent,
+Claims manager, or Platform administrator to present each role in the same
+browser. **Exit demo** restores the account's original role. The selection is
+temporary and tied to the current sign-in; Clerk account roles stay unchanged.
+The first policyholder switch adds Motor and Burglary demo policies to the
+account, and subsequent switches reuse them. These use the normal database and
+claims workflow. In the manager view, the presenter can assign a claim to
+themselves, then switch to Agent to work on it. No extra account or configuration
+is needed. Role switching is disabled outside development.
+
+For a separate synthetic preview without database writes:
+
 ```powershell
 $env:PORTAL_DEMO_ENABLED = 'true'
 npm.cmd run dev -- --port 3001
@@ -46,6 +59,12 @@ The tests use synthetic inputs and mocked upload transport. They do not establis
 The original findings and delivery recommendations are preserved in [the prototype review](docs/prototype-review.md). Changes are left uncommitted for review.
 
 ## Onboarding review
+
+For the school prototype, inviting a policyholder takes only their name, email,
+and policy type (Motor or Burglary). The selected organization is filled in from
+the dashboard. Accepting the invitation adds a demo policy automatically; phone
+numbers, insurer references, coverage dates, and policy confirmation are not
+required. Policy details can be edited later.
 
 See [the onboarding review and change report](docs/onboarding-review-and-changes.md)
 for the role design, research, implemented improvements, validation, remaining

@@ -27,7 +27,7 @@ async function validateEnrollment(tx: Tx, actorId: string, invitation: Invitatio
   const existing = await tx.select({ id: policies.id }).from(policies).where(and(eq(policies.userId, actorId),
     invitation.purpose === "policyholder" ? eq(policies.policyType, invitation.enrollmentPolicyType!) : undefined)).limit(1);
   if (existing.length) throw new Error(invitation.purpose === "staff" ? "A policyholder account cannot accept staff access." : "You already have a policy of this type. Ask your agent to review it.");
-  if (invitation.purpose === "policyholder" && (!invitation.enrollmentPolicyType || !invitation.enrollmentPolicyNumber || !invitation.enrollmentPhone || !invitation.policyProfile))
+  if (invitation.purpose === "policyholder" && (!invitation.enrollmentPolicyType || !invitation.enrollmentPolicyNumber || !invitation.policyProfile))
     throw new Error("This enrollment is incomplete. Ask your agent to replace the invitation.");
   if (invitation.purpose === "policyholder" && invitation.policyProfile?.source === "manual" && invitation.policyProfile.insurerReference) {
     const [duplicate] = await tx.select({ id: policies.id }).from(policies).where(and(
@@ -180,7 +180,7 @@ export async function processRoleOperation(id: string, cancel = false) {
           await validateEnrollment(tx, actor.id, invite, confirmed, op.previousRole);
           if (invite.purpose === "policyholder") {
             await tx.insert(policyholderEnrollments).values({ actorId: actor.id, organizationId: invite.organizationId, phone: invite.enrollmentPhone })
-              .onConflictDoUpdate({ target: policyholderEnrollments.actorId, set: { phone: invite.enrollmentPhone } });
+              .onConflictDoUpdate({ target: policyholderEnrollments.actorId, set: { phone: sql`coalesce(${invite.enrollmentPhone}, ${policyholderEnrollments.phone})` } });
             await tx.insert(policies).values({ policyNumber: invite.enrollmentPolicyNumber!, policyType: invite.enrollmentPolicyType!, userId: actor.id,
               organizationId: invite.organizationId, status: "active", ...invite.policyProfile! });
           } else if (op.desiredRole !== "admin") await tx.insert(agentOrganizations).values({ agentId: actor.id, organizationId: invite.organizationId }).onConflictDoNothing();

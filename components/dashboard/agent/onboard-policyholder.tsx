@@ -19,14 +19,7 @@ import { useEffect, useState, useTransition } from "react";
 const emptyForm = {
   fullName: "",
   email: "",
-  phone: "",
   policyType: "motor",
-  source: "manual",
-  insurerReference: "",
-  coverageStart: "",
-  coverageEnd: "",
-  insuredAsset: "",
-  coverageSummary: "",
 };
 export function OnboardPolicyholder({
   organizationName,
@@ -51,8 +44,9 @@ function PolicyholderEnrollment({
   organizationId?: string;
 }) {
   const [form, setForm] = useState(emptyForm);
-  const [policyConfirmed, setPolicyConfirmed] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string[] | undefined>>({});
+  const [fieldErrors, setFieldErrors] = useState<
+    Record<string, string[] | undefined>
+  >({});
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [invites, setInvites] = useState<InvitationSummary[]>([]);
@@ -101,18 +95,14 @@ function PolicyholderEnrollment({
         const data = new FormData();
         Object.entries(form).forEach(([key, value]) => data.set(key, value));
         data.set("organizationId", organizationId);
-        data.set("policyConfirmed", String(policyConfirmed));
         const result = await onboardPolicyholder(data);
         if (!result.success) {
           setError(result.error);
           if ("fieldErrors" in result) setFieldErrors(result.fieldErrors ?? {});
           return;
         }
-        setMessage(
-          `${result.policyholderName}: ${result.message} The policy becomes available after verified invitation acceptance.`,
-        );
+        setMessage(`${result.policyholderName}: ${result.message}`);
         setForm(emptyForm);
-        setPolicyConfirmed(false);
         await reloadInvitations();
       } catch {
         setError("Could not save the invitation. Please retry.");
@@ -120,29 +110,31 @@ function PolicyholderEnrollment({
     });
   }
   const field = (
-    key: keyof typeof emptyForm,
+    key: "fullName" | "email",
     label: string,
     type = "text",
-    required = true,
   ) => (
     <div className="grid gap-1.5">
       <Label htmlFor={`enroll-${key}`}>{label}</Label>
       <Input
         id={`enroll-${key}`}
         type={type}
-        required={required}
+        required
+        disabled={pending}
+        autoComplete={key === "fullName" ? "name" : "email"}
         value={form[key]}
         aria-invalid={!!fieldErrors[key]}
         aria-describedby={fieldErrors[key] ? `enroll-${key}-error` : undefined}
         onChange={(event) => {
           setForm((value) => ({ ...value, [key]: event.target.value }));
-          setPolicyConfirmed(false);
         }}
-        maxLength={
-          key === "coverageSummary" ? 2000 : key === "insuredAsset" ? 500 : 255
-        }
+        maxLength={key === "fullName" ? 150 : 255}
       />
-      {fieldErrors[key] && <p id={`enroll-${key}-error`} className="text-xs text-destructive">{fieldErrors[key]?.join(" ")}</p>}
+      {fieldErrors[key] && (
+        <p id={`enroll-${key}-error`} className="text-xs text-destructive">
+          {fieldErrors[key].join(" ")}
+        </p>
+      )}
     </div>
   );
   return (
@@ -151,24 +143,27 @@ function PolicyholderEnrollment({
         <CardTitle>Invite a policyholder</CardTitle>
         <CardDescription>
           {organizationId
-            ? `Record a Motor or Burglary policy for ${organizationName || "the selected organization"}, then invite its holder.`
+            ? `Invite someone to join ${organizationName || "the selected organization"}.`
             : "An organization membership is required to invite policyholders."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {organizationId ? (
           <form onSubmit={submit} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4">
               {field("fullName", "Full name")}
               {field("email", "Email", "email")}
-              {field("phone", "Contact number (include country code)", "tel")}
               <div className="grid gap-1.5">
-                <Label htmlFor="enroll-policyType">Policy</Label>
+                <Label htmlFor="enroll-policyType">Policy type</Label>
                 <select
                   id="enroll-policyType"
                   value={form.policyType}
+                  disabled={pending}
+                  aria-invalid={!!fieldErrors.policyType}
+                  aria-describedby={
+                    fieldErrors.policyType ? "enroll-policyType-error" : undefined
+                  }
                   onChange={(event) => {
-                    setPolicyConfirmed(false);
                     setForm((value) => ({
                       ...value,
                       policyType: event.target.value,
@@ -179,63 +174,16 @@ function PolicyholderEnrollment({
                   <option value="motor">Motor</option>
                   <option value="burglary">Burglary</option>
                 </select>
+                {fieldErrors.policyType && (
+                  <p id="enroll-policyType-error" className="text-xs text-destructive">
+                    {fieldErrors.policyType.join(" ")}
+                  </p>
+                )}
               </div>
             </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="enroll-source">Policy record source</Label>
-              <select
-                id="enroll-source"
-                value={form.source}
-                onChange={(event) => {
-                  setPolicyConfirmed(false);
-                  setForm((value) => ({ ...value, source: event.target.value }));
-                }}
-                className="h-9 rounded-lg border bg-background px-3 text-sm"
-              >
-                <option value="demo">
-                  Demonstration policy (synthetic data)
-                </option>
-                <option value="manual">Manually recorded insurer policy</option>
-              </select>
-              <p className="text-xs text-muted-foreground">
-                Record an existing insurer policy for real onboarding. Choose demonstration only for synthetic data. A portal record does not issue insurance or verify claim coverage.
-              </p>
-            </div>
-            {field(
-              "insurerReference",
-              "Existing insurer policy number",
-              "text",
-              form.source === "manual",
-            )}
-            <div className="grid gap-4 sm:grid-cols-2">
-              {field(
-                "coverageStart",
-                "Coverage starts",
-                "date",
-                form.source === "manual",
-              )}
-              {field(
-                "coverageEnd",
-                "Coverage ends",
-                "date",
-                form.source === "manual",
-              )}
-            </div>
-            {field(
-              "insuredAsset",
-              form.policyType === "motor"
-                ? "Insured vehicle (registration and description)"
-                : "Insured premises (address and description)",
-            )}
-            {field("coverageSummary", "Coverage summary (manually recorded)")}
-            <label className="flex items-start gap-3 rounded-lg border p-3 text-sm">
-              <input type="checkbox" required checked={policyConfirmed} onChange={(event) => setPolicyConfirmed(event.target.checked)} className="mt-1" />
-              <span>{form.source === "manual" ? "I checked the existing insurer policy, its named holder, email address, insured asset and coverage dates against the insurer's records." : "I confirm this invitation uses synthetic policyholder and policy details for demonstration."}</span>
-            </label>
             <p className="text-xs text-muted-foreground">
-              The portal stores the invited contact details and policy after
-              acceptance. No ID document is needed for account activation. Use
-              synthetic identities for demonstrations.
+              They’ll receive an email to join. A demo policy is added automatically
+              when they accept.
             </p>
             {error && (
               <p role="alert" className="text-sm text-destructive">
@@ -250,10 +198,8 @@ function PolicyholderEnrollment({
                 {message}
               </p>
             )}
-            <Button type="submit" disabled={pending || !policyConfirmed}>
-              {pending
-                ? "Saving invitation…"
-                : "Create policyholder invitation"}
+            <Button type="submit" disabled={pending}>
+              {pending ? "Sending invitation…" : "Send invitation"}
             </Button>
           </form>
         ) : (
