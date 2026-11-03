@@ -6,15 +6,14 @@ import {
 import { canAccessClaim } from "../lib/claim-access-policy";
 import { hasPermission, permissions, type Role } from "../lib/permissions";
 
-const development = { NODE_ENV: "development" };
 const account = { role: "admin" as Role, clerkUserId: "user_presenter", clerkSessionId: "session_presenter" };
 const cookie = (role: string, overrides = {}) => JSON.stringify({ ...account, role, ...overrides });
 
-test("local staff can showcase every role with the same signed-in account", () => {
+test("staff can showcase every role with no deployment or environment configuration", () => {
   for (const baseRole of ["agent", "head_agent", "admin"] as const) {
-    assert.equal(canSwitchDemoRoles(baseRole, development), true);
+    assert.equal(canSwitchDemoRoles(baseRole), true);
     for (const { role } of DEMO_ROLES) {
-      assert.equal(resolveDemoRole({ ...account, role: baseRole }, cookie(role), development), role);
+      assert.equal(resolveDemoRole({ ...account, role: baseRole }, cookie(role)), role);
     }
   }
   assert.equal(account.role, "admin");
@@ -22,41 +21,34 @@ test("local staff can showcase every role with the same signed-in account", () =
 
 test("switching back and exiting demo do not permanently change the account role", () => {
   for (const selected of ["user", "agent", "head_agent", "admin", "user"]) {
-    assert.equal(resolveDemoRole(account, cookie(selected), development), selected);
+    assert.equal(resolveDemoRole(account, cookie(selected)), selected);
   }
-  const override = resolveDemoRole(account, undefined, development);
+  const override = resolveDemoRole(account, undefined);
   assert.equal(override, null);
   assert.equal(override ?? account.role, "admin");
 });
 
 test("policyholder and unassigned accounts cannot enable role switching with a forged cookie", () => {
   for (const role of ["user", null] as const) {
-    assert.equal(canSwitchDemoRoles(role, development), false);
-    assert.equal(resolveDemoRole({ ...account, role }, cookie("admin"), development), null);
-  }
-});
-
-test("demo cookies never grant roles outside local development", () => {
-  for (const env of [{ NODE_ENV: "production" }, { NODE_ENV: "test" }, {}]) {
-    assert.equal(canSwitchDemoRoles(account.role, env), false);
-    assert.equal(resolveDemoRole(account, cookie("user"), env), null);
+    assert.equal(canSwitchDemoRoles(role), false);
+    assert.equal(resolveDemoRole({ ...account, role }, cookie("admin")), null);
   }
 });
 
 test("demo role state cannot carry over to another account or a new sign-in", () => {
-  assert.equal(resolveDemoRole({ ...account, clerkUserId: "user_other" }, cookie("admin"), development), null);
-  assert.equal(resolveDemoRole({ ...account, clerkSessionId: "session_new" }, cookie("admin"), development), null);
-  assert.equal(resolveDemoRole(account, cookie("admin", { clerkSessionId: undefined }), development), null);
+  assert.equal(resolveDemoRole({ ...account, clerkUserId: "user_other" }, cookie("admin")), null);
+  assert.equal(resolveDemoRole({ ...account, clerkSessionId: "session_new" }, cookie("admin")), null);
+  assert.equal(resolveDemoRole(account, cookie("admin", { clerkSessionId: undefined })), null);
 });
 
 test("malformed and unsupported demo role states are ignored", () => {
   for (const value of [undefined, "", "invalid", "null", "[]", "{}", cookie("owner"), cookie("ADMIN")]) {
-    assert.equal(resolveDemoRole(account, value, development), null);
+    assert.equal(resolveDemoRole(account, value), null);
   }
 });
 
 test("the selected policyholder role keeps normal ownership and permission restrictions", () => {
-  const role = resolveDemoRole(account, cookie("user"), development)!;
+  const role = resolveDemoRole(account, cookie("user"))!;
   const claim = { policyholderId: "presenter", createdBy: "presenter", assignedAgentId: "agent", status: "pending" };
   assert.equal(canAccessClaim(role, "presenter", claim, false), true);
   assert.equal(canAccessClaim(role, "someone_else", claim, true), false);

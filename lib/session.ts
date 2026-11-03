@@ -55,7 +55,7 @@ const readSessionUser = cache(async (): Promise<SessionUser | null> => {
 
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const account = await readSessionUser();
-  if (!account || !canSwitchDemoRoles(account.role, process.env)) return account;
+  if (!account || !canSwitchDemoRoles(account.role)) return account;
   const role = await getDemoRole(account);
   return {
     ...account,

@@ -9,20 +9,15 @@ export const DEMO_ROLES: { role: Role; label: string }[] = [
   { role: "admin", label: "Platform administrator" },
 ];
 
-export function canSwitchDemoRoles(
-  role: Role | null,
-  env: { NODE_ENV?: string },
-) {
-  return env.NODE_ENV === "development" &&
-    (role === "admin" || role === "head_agent" || role === "agent");
+export function canSwitchDemoRoles(role: Role | null) {
+  return role === "admin" || role === "head_agent" || role === "agent";
 }
 
 export function resolveDemoRole(
   account: { role: Role | null; clerkUserId: string; clerkSessionId: string },
   cookie: string | undefined,
-  env: { NODE_ENV?: string },
 ): Role | null {
-  if (!cookie || !canSwitchDemoRoles(account.role, env)) return null;
+  if (!cookie || !canSwitchDemoRoles(account.role)) return null;
   try {
     const state = JSON.parse(cookie);
     if (state.clerkUserId !== account.clerkUserId ||

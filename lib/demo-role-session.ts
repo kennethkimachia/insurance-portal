@@ -11,6 +11,5 @@ export async function getDemoRole(account: {
   return resolveDemoRole(
     account,
     (await cookies()).get(DEMO_ROLE_COOKIE)?.value,
-    process.env,
   );
 }

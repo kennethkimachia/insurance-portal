@@ -25,7 +25,7 @@ Existing cloud databases require a **manual, reviewed database upgrade** before 
 
 ## Synthetic preview
 
-In local development, signed-in agents, claims managers, and administrators have
+Signed-in agents, claims managers, and administrators have
 a **Demo role** selector above the dashboard. Choose Policyholder, Agent,
 Claims manager, or Platform administrator to present each role in the same
 browser. **Exit demo** restores the account's original role. The selection is
@@ -34,7 +34,9 @@ The first policyholder switch adds Motor and Burglary demo policies to the
 account, and subsequent switches reuse them. These use the normal database and
 claims workflow. In the manager view, the presenter can assign a claim to
 themselves, then switch to Agent to work on it. No extra account or configuration
-is needed. Role switching is disabled outside development.
+is needed. The switcher works by default locally and on Vercel, including
+Production and Preview deployments. No environment flag is required.
+Policyholder accounts cannot enable it.
 
 For a separate synthetic preview without database writes:
 

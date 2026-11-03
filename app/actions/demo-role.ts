@@ -16,8 +16,8 @@ import { actionError } from "@/lib/action-errors";
 export async function switchDemoRole(requestedRole: string) {
   try {
     const session = await requireSession();
-    if (!session.demo || !canSwitchDemoRoles(session.demo.accountRole, process.env))
-      throw new Error("Demo role switching is available to staff in local development.");
+    if (!session.demo || !canSwitchDemoRoles(session.demo.accountRole))
+      throw new Error("Sign in with a staff account to switch demo roles.");
 
     const role = parsePortalRole(requestedRole);
     if (!role && requestedRole !== "account") throw new Error("Choose a valid demo role.");
