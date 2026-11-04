@@ -203,6 +203,10 @@ export async function POST(req: NextRequest) {
             uploadedBy: session.id,
             scanState: "pending",
             uploadState: "uploading",
+            // This timestamp fences completion/failure writes to this attempt.
+            // PostgreSQL now() can contain microseconds that a returned JS Date
+            // truncates, making both writes miss and leaving the file uploading.
+            updatedAt: new Date(),
           })
           .returning();
       }
