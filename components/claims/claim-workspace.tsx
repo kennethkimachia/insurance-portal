@@ -1,7 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { Tabs } from "radix-ui";
+import { SubmittedClaimReport } from "./submitted-claim-report";
+import { ExportClaimButton } from "./export-claim-button";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   Card,
@@ -47,11 +50,11 @@ import {
 import { addClaimNote } from "@/app/actions/agent/manage-claims";
 import { recordClaimAssessment } from "@/app/actions/agent/assessment";
 import { StatusEditor } from "@/components/dashboard/agent/status-editor";
-import { ArrowLeft, Download, Mail, Phone, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, FileText, Files, ListChecks } from "lucide-react";
 import { toast } from "sonner";
-import { ClaimUpdateComposer } from "./claim-update-composer";
+import { latestWorkResult, latestAssessedCost } from "@/lib/claim-casework";
 import { ProgressEditor } from "@/components/dashboard/agent/progress-editor";
-import { claimJourney, latestPublicClaimUpdate, claimUpdateSchema, updateIsOverdue, RESPONSIBLE_PARTIES } from "@/lib/claim-communication";
+import { claimUpdateSchema, RESPONSIBLE_PARTIES } from "@/lib/claim-communication";
 
 export type ClaimWorkspaceData = Awaited<ReturnType<typeof getClaimWorkspace>>;
 const formatDate = (value: string) =>
@@ -60,84 +63,14 @@ function readable(key: string) {
   return key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
 }
 
-function OriginalReport({
-  report,
-}: {
-  report: Record<string, unknown> | null;
-}) {
-  if (!report)
-    return (
-      <p className="text-sm text-muted-foreground">
-        This older claim has no preserved form snapshot. Ask your agent for the
-        original report.
-      </p>
-    );
-  const groups = Object.entries(report).filter(
-    ([key]) =>
-      !["pendingEvidence", "itemKey", "policyId", "claimId"].includes(key),
-  );
-  return (
-    <div className="space-y-5">
-      {groups.map(([key, value]) => (
-        <div key={key}>
-          <p className="text-xs font-medium text-muted-foreground">
-            {readable(key)}
-          </p>
-          {Array.isArray(value) ? (
-            value.length ? (
-              <div className="mt-2 space-y-2">
-                {value.map((item, index) => (
-                  <dl
-                    key={index}
-                    className="grid gap-2 rounded-lg border p-3 sm:grid-cols-2"
-                  >
-                    {Object.entries(item as Record<string, unknown>)
-                      .filter(([field]) => field !== "itemKey")
-                      .map(([field, entry]) => (
-                        <div key={field}>
-                          <dt className="text-xs text-muted-foreground">
-                            {readable(field)}
-                          </dt>
-                          <dd className="break-words text-sm">
-                            {entry === "" || entry == null
-                              ? "Not provided"
-                              : typeof entry === "boolean"
-                                ? entry
-                                  ? "Yes"
-                                  : "No"
-                                : String(entry).replaceAll("_", " ")}
-                          </dd>
-                        </div>
-                      ))}
-                  </dl>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm">None reported at submission</p>
-            )
-          ) : (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-              {value === "" || value == null
-                ? "Not provided"
-                : typeof value === "boolean"
-                  ? value
-                    ? "Confirmed"
-                    : "No"
-                  : String(value).replaceAll("_", " ")}
-            </p>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function TextAction({
   id,
   title,
   label,
   button,
   minLength = 10,
+  initialText = "",
+  maxLength = 4000,
   disabled,
   onSubmit,
 }: {
@@ -146,10 +79,12 @@ function TextAction({
   label: string;
   button: string;
   minLength?: number;
+  initialText?: string;
+  maxLength?: number;
   disabled?: boolean;
   onSubmit: (text: string) => Promise<{ success: boolean; error?: string }>;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   return (
@@ -165,7 +100,7 @@ function TextAction({
               toast.error(result.error || "Could not save");
               return;
             }
-            setText("");
+            if (!initialText) setText("");
             toast.success("Saved");
             router.refresh();
           } catch {
@@ -181,8 +116,9 @@ function TextAction({
         value={text}
         onChange={(e) => setText(e.target.value)}
         minLength={minLength}
-        maxLength={4000}
+        maxLength={maxLength}
         required
+        rows={id === "assessment-summary" ? 8 : 4}
         disabled={disabled || pending}
       />
       <Button
@@ -227,8 +163,11 @@ export function ClaimWorkspace({
   ].includes(claim.status);
   const openRequests = requests.filter((r) => r.status !== "resolved");
   const [activityFilter, setActivityFilter] = useState("all");
-  const latestUpdate = latestPublicClaimUpdate(events);
-  const journey = claimJourney(claim.status, !!claim.assignedAgentId);
+  const workResults = progress.filter((step) => !step.isSystem).map((step) => ({ step, result: latestWorkResult(step.id, events) })).filter((entry) => entry.result).sort((a, b) => b.result!.createdAt.localeCompare(a.result!.createdAt));
+  const recommendation = workResults.find((entry) => entry.step.isCompleted && ["recommend_approval", "recommend_rejection"].includes(entry.result!.result))?.result;
+  const costResult = latestAssessedCost(events);
+  const [caseAction, setCaseAction] = useState<"review" | "message" | null>(null);
+  const [completeReview, setCompleteReview] = useState(false);
   const unreviewed = documents.filter((d) => !["accepted", "waived"].includes(d.reviewStatus));
   const repliedRequests = openRequests.filter((r) => r.status === "responded");
   const [uploads, setUploads] = useState<DocumentUploads>({});
@@ -239,16 +178,34 @@ export function ClaimWorkspace({
   const [requestCategory, setRequestCategory] = useState("other");
   const [dueAt, setDueAt] = useState("");
   const [noteVisibility, setNoteVisibility] = useState<"public" | "internal">(
-    "public",
-  );
-  const [lossEstimate, setLossEstimate] = useState(
-    claim.estimatedLossAmount ?? "",
+    "internal",
   );
   const [handoffSource, setHandoffSource] = useState<"manual" | "simulated">(
     "manual",
   );
   const [carrierReference, setCarrierReference] = useState("");
-  const report = claim.originalSubmission;
+  const report = data.submittedReport;
+  const [activeTab, setActiveTab] = useState("report");
+  useEffect(() => {
+    const followHash = () => {
+      const section = window.location.hash.slice(1);
+      if (["documents", "document-review", "add-evidence", "information-requests"].includes(section)) setActiveTab("evidence");
+      else if (["assessment", "claim-stage"].includes(section) && staff) { setActiveTab("work"); setCaseAction("review"); }
+      else if (["publish-update", "claim-progress"].includes(section)) setActiveTab("work");
+      else if (section === "claim-activity") setActiveTab("work");
+      else if (section === "original-report") setActiveTab("report");
+    };
+    followHash();
+    window.addEventListener("hashchange", followHash);
+    return () => window.removeEventListener("hashchange", followHash);
+  }, [staff]);
+  const receivedDocuments = documents.filter((doc) => doc.uploadState === "ready");
+  const tabs = [
+    { value: "report", label: "Claim form", icon: FileText },
+    { value: "evidence", label: "Evidence", icon: Files, count: documents.length },
+    { value: "work", label: staff ? "Case work" : "Progress & history", icon: ListChecks },
+  ];
+  const holderAvailable = claim.policyholderName !== "Account unavailable";
   const lossItems = (
     Array.isArray(claim.formData?.lossItems) ? claim.formData.lossItems : []
   )
@@ -361,97 +318,102 @@ export function ClaimWorkspace({
   }
   const disabled = demo || uploading;
   return (
-    <div className="claim-workspace space-y-7">
-      {demo && (
-        <div className="rounded-xl border border-amber-300/70 bg-amber-50 dark:border-amber-500/25 dark:bg-amber-500/10 p-4 text-sm leading-6 text-amber-950 dark:text-amber-200">
-          Prototype preview · synthetic data · account, storage and insurer
-          actions are disabled.
+    <div className="claim-workspace space-y-6">
+      {demo && <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm">Prototype preview · synthetic data · saving and document access are disabled.</p>}
+      <Link href={demo ? "/prototype" : staff ? "/claims" : "/dashboard/user"} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary"><ArrowLeft className="size-4" />{staff ? "All claims" : "Dashboard"}</Link>
+      <header className="space-y-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="mb-2 text-sm font-medium text-primary">{claim.policyType === "motor" ? "Motor" : "Burglary"} claim · {claim.organizationName} · {role === "user" ? "Policyholder view" : role === "head_agent" ? "Claims manager view" : role === "admin" ? "Administrator view" : "Agent view"}</p>
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{claim.policyType === "motor" ? String(report?.registrationNumber || "Vehicle claim") : String(report?.premisesLocation || "Premises claim")}</h1>
+            <p className="mt-2 break-all font-mono text-xs text-muted-foreground" title="Claim reference">{claim.claimNumber}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3"><Badge variant="secondary" className="px-3 py-1.5 text-sm">{statusLabels[claim.status as ClaimStatus]}</Badge>{!demo && <ExportClaimButton claimId={claim.id} claimNumber={claim.claimNumber} />}</div>
         </div>
-      )}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <Link
-            href={demo ? "/prototype" : staff ? "/claims" : "/dashboard/user"}
-            className="mb-4 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-primary"
-          >
-            <ArrowLeft className="size-4" />
-            {staff ? "Claims" : "Dashboard"}
-          </Link>
-          <h1 className="portal-heading break-all font-mono">
-            {claim.claimNumber}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {claim.policyType === "motor" ? "Motor" : "Burglary"} ·{" "}
-            {claim.policyNumber} · {claim.organizationName}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Badge variant="secondary">
-            {statusLabels[claim.status as ClaimStatus]}
-          </Badge>
-          {!demo && (
-            <Button asChild variant="outline">
-              <Link href={`/api/claims/${claim.id}/export`}>
-                <Download />
-                Download report
-              </Link>
-            </Button>
+        <dl className="grid gap-5 rounded-xl border bg-card p-5 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="min-w-0"><dt className="text-sm text-muted-foreground">Policyholder</dt><dd className="mt-1 break-words text-base font-semibold">{holderAvailable ? claim.policyholderName : "Name unavailable"}</dd><dd className="mt-1 break-words text-sm text-muted-foreground">{claim.policyholderEmail || (holderAvailable ? "Email not recorded" : "Account profile unavailable; verify identity from the submitted evidence.")}{claim.contactPhone && <span className="mt-1 block">{claim.contactPhone}</span>}</dd></div>
+          <div className="min-w-0"><dt className="text-sm text-muted-foreground">Policy</dt><dd className="mt-1 break-words text-base font-semibold">{claim.policyNumber}</dd><dd className="mt-1 text-sm text-muted-foreground">{claim.policyType === "motor" ? "Motor insurance" : "Burglary insurance"}</dd></div>
+          <div className="min-w-0"><dt className="text-sm text-muted-foreground">{report?.incidentTiming === "approximate" ? "Incident date range" : report?.incidentDate ? "Incident date" : "Discovered"}</dt><dd className="mt-1 text-base font-semibold">{report?.incidentTiming === "approximate" ? `${report.incidentRangeStart || "Unknown"} – ${report.incidentRangeEnd || "Unknown"}` : String(report?.incidentDate || report?.discoveryDate || claim.incidentDate || "Unknown")}</dd><dd className="mt-1 text-sm text-muted-foreground">{claim.submittedAt ? `Submitted ${formatDate(claim.submittedAt)}` : "Submission date not recorded"}</dd></div>
+          <div className="min-w-0"><dt className="text-sm text-muted-foreground">Assigned agent</dt><dd className="mt-1 break-words text-base font-semibold">{agent?.name || "Not assigned"}</dd>{agent && <dd className="mt-1 break-words text-sm"><a className="text-primary underline-offset-4 hover:underline" href={`mailto:${agent.email}`}>{agent.email}</a>{agent.phone && <a className="mt-1 block text-muted-foreground" href={`tel:${agent.phone}`}>{agent.phone}</a>}</dd>}</div>
+        </dl>
+        {(claim.withdrawalRequestedAt || similar.length > 0) && <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">{claim.withdrawalRequestedAt && <p>Withdrawal requested {formatDate(claim.withdrawalRequestedAt)}. A manager must review the request.</p>}{similar.length > 0 && <p>Other reports on this policy share the incident date: {similar.map((item) => item.claimNumber).join(", ")}. Check for duplicate reporting.</p>}</div>}
+        {staff && <div className="flex flex-wrap gap-2" aria-label="Outstanding claim work">
+          <Button variant="outline" onClick={() => setActiveTab("evidence")}>{receivedDocuments.length} of {documents.length} files received · {unreviewed.filter((doc) => doc.uploadState === "ready").length} awaiting inspection</Button>
+          <Button variant="outline" onClick={() => setActiveTab("evidence")}>{repliedRequests.length} replies to review · {openRequests.length} open requests</Button>
+          <Button variant="outline" onClick={() => setActiveTab("work")}>{progress.filter((step) => !step.isSystem && !step.isCompleted).length} outstanding next actions</Button>
+        </div>}
+        {!staff && <p className="rounded-xl border bg-card p-4 text-base leading-7">{claimNextAction(claim.status, openRequests.filter((r) => r.status === "open").length)}</p>}
+      </header>
+      <Tabs.Root value={activeTab} onValueChange={(value) => {
+        setActiveTab(value);
+        document.getElementById("claim-file-tabs")?.scrollIntoView({ block: "start" });
+      }} className="min-w-0">
+        <Tabs.List id="claim-file-tabs" aria-label="Claim file sections" className="sticky top-16 z-30 mb-6 flex scroll-mt-16 gap-1 overflow-x-auto border-b bg-background/95 backdrop-blur">
+          {tabs.map(({ value, label, icon: Icon, ...tab }) => <Tabs.Trigger key={value} value={value} className="flex shrink-0 items-center gap-2 border-b-2 border-transparent px-4 py-4 text-sm font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[state=active]:border-primary data-[state=active]:text-primary"><Icon className="size-4" />{label}{"count" in tab && <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs">{tab.count}</span>}</Tabs.Trigger>)}
+        </Tabs.List>
+        <Tabs.Content value="report" forceMount className="space-y-6 outline-none data-[state=inactive]:hidden">
+          {report && <div className="grid gap-5 rounded-xl border bg-card p-6 sm:grid-cols-2">
+            <div><p className="text-sm text-muted-foreground">{claim.policyType === "motor" ? "Driver named in the report" : "Premises use"}</p><p className="mt-1 break-words text-lg font-semibold">{String(claim.policyType === "motor" ? report.driverFullName || "Not provided" : report.premisesUse || "Not provided")}</p></div>
+            <div><p className="text-sm text-muted-foreground">{claim.policyType === "motor" ? "Incident location" : "Premises location"}</p><p className="mt-1 break-words text-base font-medium leading-7">{String(report.incidentLocation || report.premisesLocation || "Not provided")}</p></div>
+          </div>}
+          {!demo && <div className="rounded-xl border bg-muted/20 p-4 text-sm leading-6"><p className="font-medium">Share a complete claim for review</p><p className="text-muted-foreground">Export a ZIP with a readable, printable report and the original supporting documents. Recipients can extract it and open report.html without portal access.{staff ? " Staff exports include internal findings and notes for your internal review team." : " Your export includes the claim information shared with you."}</p></div>}
+          <SubmittedClaimReport report={report} source={data.reportSource} />
+          <Card>
+            <CardHeader><CardTitle>Policy recorded at submission</CardTitle><CardDescription>Use this context alongside the policy wording and evidence when assessing coverage.</CardDescription></CardHeader>
+            <CardContent>
+              <dl className="grid gap-5 sm:grid-cols-2">
+                {[["Insurer policy reference", claim.policySnapshot?.insurerReference], ["Insured asset", claim.policySnapshot?.insuredAsset], ["Coverage start", claim.policySnapshot?.coverageStart], ["Coverage end", claim.policySnapshot?.coverageEnd], ["Coverage summary", claim.policySnapshot?.coverageSummary]].map(([label, value]) => <div key={String(label)} className="min-w-0"><dt className="text-sm text-muted-foreground">{String(label)}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-base leading-7">{value ? String(value) : "Not recorded"}</dd></div>)}
+              </dl>
+            </CardContent>
+          </Card>
+        </Tabs.Content>
+        <Tabs.Content value="evidence" forceMount className="space-y-6 outline-none data-[state=inactive]:hidden">
+          <DocumentVault documents={documents} claimId={claim.id} staff={staff} demo={demo} active={activeTab === "evidence"} renderReview={staff && reviewOpen ? (doc) => <DocumentReview key={`${doc.id}:${doc.reviewStatus}`} doc={doc} disabled={disabled} /> : undefined} />
+          {reviewOpen && (
+            <Card id="add-evidence">
+              <details>
+                <summary className="cursor-pointer px-6 text-base font-semibold text-primary">Add documents or retry an upload</summary>
+              <CardHeader>
+                <CardTitle>Add supporting documents</CardTitle>
+                <CardDescription>
+                  50 MB per file, 20 files and 150 MB per claim. New files wait
+                  for manual inspection. You can retry failed files separately.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {!demo && !data.storageReady && <p role="status" className="rounded-lg border p-3 text-sm">Evidence storage is not available yet. Your claim remains saved. You can select files and return to upload them when storage is configured.</p>}
+                {unselectedReminders.length > 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Files selected in your original report need selecting again:{" "}
+                    {unselectedReminders.map((item) => item.name).join(", ")}.
+                    Browsers cannot keep the file contents after refresh.
+                  </p>
+                )}
+                <DocumentUploader
+                  categories={categories}
+                  uploads={uploads}
+                  onUploadsChange={changeUploads}
+                  onRetry={data.storageReady ? (id) => sendFiles([id]) : undefined}
+                  disabled={uploading || demo}
+                  lossItems={lossItems}
+                />
+                <Button
+                  disabled={
+                    uploading ||
+                    demo || !data.storageReady ||
+                    !Object.values(uploads).some((files) =>
+                      files.some((file) => file.status !== "uploaded"),
+                    )
+                  }
+                  onClick={() => sendFiles()}
+                >
+                  {uploading && <Loader2 className="size-4 animate-spin" />}
+                  Upload documents
+                </Button>
+              </CardContent>
+              </details>
+            </Card>
           )}
-        </div>
-      </div>
-      <Card className="border-primary/20 bg-primary/5 shadow-none">
-        <CardHeader>
-          <CardTitle>What happens next</CardTitle>
-          <CardDescription>
-            {openRequests.length > 0 && repliedRequests.length === openRequests.length && !closed
-              ? staff ? "Review the policyholder’s replies, then resolve the information requests or explain what is still needed." : "Your replies have been received. Your agent will review them and let you know if anything else is needed."
-              : claimNextAction(claim.status, openRequests.filter((r) => r.status === "open").length)}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          {claim.submittedAt && (
-            <p>
-              Received {formatDate(claim.submittedAt)}. This receipt confirms
-              your report was saved in the portal.
-            </p>
-          )}
-          {claim.withdrawalRequestedAt && (
-            <p className="font-medium">
-              Withdrawal requested {formatDate(claim.withdrawalRequestedAt)}. A
-              manager must review this request.
-            </p>
-          )}
-          {similar.length > 0 && (
-            <p className="text-amber-700 dark:text-amber-400">
-              Another report for this policy has the same incident date:{" "}
-              {similar.map((s) => s.claimNumber).join(", ")}. Contact your agent
-              if these describe the same incident.
-            </p>
-          )}
-          <p className="text-xs text-muted-foreground">
-            Your insurer must confirm coverage and the final outcome. The portal
-            does not send payments or automatically submit claims to an insurer.
-          </p>
-        </CardContent>
-      </Card>
-      {staff && <Card id="review-summary"><CardHeader><CardTitle>Review desk</CardTitle><CardDescription>Start with outstanding work, inspect the original report, then communicate the next action.</CardDescription></CardHeader><CardContent className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <a href={reviewOpen && unreviewed.length ? "#document-review" : "#documents"} className="rounded-lg border p-3 text-sm">{unreviewed.length} documents {closed ? "without a review decision" : "need a decision"}</a>
-          <a href="#information-requests" className="rounded-lg border p-3 text-sm">{repliedRequests.length} replies await review</a>
-          <a href={closed ? "#claim-activity" : "#publish-update"} className="rounded-lg border p-3 text-sm">{latestUpdate ? `Last public update: ${formatDate(latestUpdate.publishedAt)}` : "No structured public update yet"}</a>
-        </div>
-        {!closed && claim.withdrawalRequestedAt && <p className="text-sm font-medium text-amber-700 dark:text-amber-400">A withdrawal request needs a manager’s review.</p>}
-        <nav aria-label="Claim review sections" className="flex flex-wrap gap-4 text-sm text-primary underline">
-          <a href="#original-report">Original report</a><a href="#documents">Evidence</a>{(canAssess || claim.assessmentSummary) && <a href="#assessment">Assessment</a>}<a href="#claim-activity">Activity</a>{!closed && <a href="#publish-update">Publish update</a>}
-        </nav>
-      </CardContent></Card>}
-      {latestUpdate && <Card className="border-primary/25"><CardHeader><CardTitle>Latest policyholder update</CardTitle><CardDescription>{latestUpdate.title} · {formatDate(latestUpdate.publishedAt)}</CardDescription></CardHeader><CardContent className="space-y-3 text-sm">
-        <p className="whitespace-pre-wrap">{latestUpdate.message}</p>
-        <UpdateDetails update={latestUpdate} />
-        {updateIsOverdue(latestUpdate.nextUpdateAt, claim.status) && <p className="font-medium text-amber-700 dark:text-amber-400">The expected update time has passed. {staff ? "Publish a fresh update explaining the current position." : "Your claims team should provide a fresh update. This does not change your claim’s outcome."}</p>}
-      </CardContent></Card>}
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(250px,1fr)]">
-        <div className="min-w-0 space-y-6">
           <Card>
             <CardHeader>
               <CardTitle id="information-requests">Information requests</CardTitle>
@@ -474,8 +436,8 @@ export function ClaimWorkspace({
                   <div className="flex flex-wrap justify-between gap-2">
                     <h3 className="text-sm font-semibold">{request.title}</h3>
                     <Badge variant="secondary">
-                      {closed && request.status !== "resolved"
-                        ? "No response required: claim closed"
+                      {closed
+                        ? "Claim closed · no response required"
                         : request.status === "responded"
                           ? "Response received"
                           : request.status === "resolved"
@@ -537,351 +499,6 @@ export function ClaimWorkspace({
               ))}
             </CardContent>
           </Card>
-          <DocumentVault
-            documents={documents}
-            claimId={claim.id}
-            staff={staff}
-            demo={demo}
-          />
-          {reviewOpen && (
-            <Card id="add-evidence">
-              <CardHeader>
-                <CardTitle>Add supporting documents</CardTitle>
-                <CardDescription>
-                  50 MB per file, 20 files and 150 MB per claim. New files wait
-                  for manual inspection. You can retry failed files separately.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {!demo && !data.storageReady && <p role="status" className="rounded-lg border p-3 text-sm">Evidence storage is not available yet. Your claim remains saved. You can select files and return to upload them when storage is configured.</p>}
-                {unselectedReminders.length > 0 && (
-                  <p className="text-sm text-muted-foreground">
-                    Files selected in your original report need selecting again:{" "}
-                    {unselectedReminders.map((item) => item.name).join(", ")}.
-                    Browsers cannot keep the file contents after refresh.
-                  </p>
-                )}
-                <DocumentUploader
-                  categories={categories}
-                  uploads={uploads}
-                  onUploadsChange={changeUploads}
-                  onRetry={data.storageReady ? (id) => sendFiles([id]) : undefined}
-                  disabled={uploading || demo}
-                  lossItems={lossItems}
-                />
-                <Button
-                  disabled={
-                    uploading ||
-                    demo || !data.storageReady ||
-                    !Object.values(uploads).some((files) =>
-                      files.some((file) => file.status !== "uploaded"),
-                    )
-                  }
-                  onClick={() => sendFiles()}
-                >
-                  {uploading && <Loader2 className="size-4 animate-spin" />}
-                  Upload documents
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-          {staff &&
-            reviewOpen &&
-            documents.some(
-              (doc) => !["accepted", "waived"].includes(doc.reviewStatus),
-            ) && (
-              <Card>
-                <CardHeader>
-                  <CardTitle id="document-review">Document inspection</CardTitle>
-                  <CardDescription>
-                    Download files for inspection before accepting them.
-                    Acceptance records a manual review; it is not an automated
-                    malware scan.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-5">
-                  {documents
-                    .filter(
-                      (doc) =>
-                        !["accepted", "waived"].includes(doc.reviewStatus),
-                    )
-                    .map((doc) => (
-                      <DocumentReview
-                        key={doc.id}
-                        doc={doc}
-                        disabled={disabled}
-                      />
-                    ))}
-                </CardContent>
-              </Card>
-            )}
-          <Card id="claim-activity">
-            <CardHeader>
-              <CardTitle>
-                {staff ? "Claim activity" : "Your claim history"}
-              </CardTitle>
-              <CardDescription>
-                {staff
-                  ? "Internal activity is labeled and visible only to staff with access."
-                  : "Updates, replies and amendments visible to you."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <label className="block text-sm">Filter activity
-                <select value={activityFilter} onChange={(e) => setActivityFilter(e.target.value)} className="ml-3 rounded-md border bg-background p-2">
-                  <option value="all">All activity</option><option value="updates">Progress updates</option><option value="documents">Documents</option><option value="messages">Messages</option>{staff && <option value="internal">Internal only</option>}
-                </select>
-              </label>
-              {[
-                ...events.map((event) => ({
-                  id: event.id,
-                  content: event.content,
-                  at: event.createdAt,
-                  visibility: event.visibility,
-                  label: `${readable(event.type.replaceAll("_", " "))} · ${event.authorName}`,
-                  kind: event.type,
-                  update: event.type === "progress_update" ? claimUpdateSchema.safeParse(event.metadata) : null,
-                })),
-                ...notes.map((note) => ({
-                  id: note.id,
-                  content: note.content,
-                  at: note.createdAt,
-                  visibility: note.visibility,
-                  label: `Message from ${note.authorName}`,
-                  kind: "message", update: null,
-                })),
-              ]
-                .filter((item) => activityFilter === "all" || (activityFilter === "updates" ? item.kind === "progress_update" : activityFilter === "documents" ? item.kind.startsWith("document_") : activityFilter === "messages" ? item.kind === "message" || item.kind === "amendment" : item.visibility === "internal"))
-                .sort((a, b) => b.at.localeCompare(a.at))
-                .map((item) => (
-                  <div
-                    key={item.id}
-                    className="relative rounded-r-lg border-l-2 border-primary/30 bg-muted/20 py-3 pl-4 pr-3"
-                  >
-                    <p className="text-xs text-muted-foreground">
-                      {formatDate(item.at)} · {item.label}
-                      {item.visibility === "internal" ? " · Internal" : ""}
-                    </p>
-                    <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-                      {item.content}
-                    </p>
-                    {item.update?.success && <div className="mt-3"><UpdateDetails update={item.update.data} /></div>}
-                  </div>
-                ))}
-            </CardContent>
-          </Card>
-          <Card id="original-report">
-            <CardHeader>
-              <CardTitle>Original incident report</CardTitle>
-              <CardDescription>
-                The report submitted at{" "}
-                {claim.submittedAt
-                  ? formatDate(claim.submittedAt)
-                  : "first notice"}
-                . Later amendments appear in the history.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <details>
-                <summary className="cursor-pointer rounded-lg border bg-muted/20 px-4 py-3 text-sm font-medium text-primary transition-colors hover:bg-accent">
-                  View submitted answers
-                </summary>
-                <div className="mt-5">
-                  <OriginalReport report={report} />
-                </div>
-              </details>
-            </CardContent>
-          </Card>
-          {!closed && !staff && <Card><CardHeader><CardTitle>Ask your claims team</CardTitle><CardDescription>For questions or general information. Use the request reply above when answering a specific information request.</CardDescription></CardHeader><CardContent><TextAction id="policyholder-message" title="Message to your agent" label="Your question or update" minLength={2} button="Send message" disabled={disabled} onSubmit={(text) => addClaimNote(claim.id, text, "public")} /></CardContent></Card>}
-          {!closed && !staff && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Add an amendment</CardTitle>
-                <CardDescription>
-                  Correct or add information while preserving your original
-                  report.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <TextAction
-                  id="amendment"
-                  title="Additional information"
-                  label="What would you like to correct or add?"
-                  button="Save amendment"
-                  disabled={disabled}
-                  onSubmit={(text) => addClaimAmendment(claim.id, text)}
-                />
-              </CardContent>
-            </Card>
-          )}
-        </div>
-        <aside className="claim-workspace space-y-7">
-          <Card>
-            <CardHeader>
-              <CardTitle>Assigned agent</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              {agent ? (
-                <>
-                  <p className="font-medium">{agent.name}</p>
-                  <a
-                    className="flex items-center gap-2 break-all text-primary"
-                    href={`mailto:${agent.email}`}
-                  >
-                    <Mail className="size-4 shrink-0" />
-                    {agent.email}
-                  </a>
-                  {agent.phone && (
-                    <a
-                      className="flex items-center gap-2 text-primary"
-                      href={`tel:${agent.phone}`}
-                    >
-                      <Phone className="size-4" />
-                      {agent.phone}
-                    </a>
-                  )}
-                </>
-              ) : (
-                <p className="text-muted-foreground">
-                  An agent has not been assigned yet. Contact the agent who sent
-                  your portal invitation if you need immediate help.
-                </p>
-              )}
-              {staff && (
-                <p className="text-xs text-muted-foreground">
-                  Policyholder: {claim.policyholderName} ·{" "}
-                  {claim.policyholderEmail}
-                  {claim.contactPhone ? ` · ${claim.contactPhone}` : ""}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-          <Card><CardHeader><CardTitle>Claim journey</CardTitle><CardDescription>Milestones describe recorded work, not a promised percentage or completion date.</CardDescription></CardHeader><CardContent className="space-y-4">
-            {journey.map((step) => <div key={step.label} className="flex gap-3"><span className="mt-1" aria-hidden="true">{step.state === "complete" ? "✓" : step.state === "not_applicable" || step.state === "ended" ? "—" : "○"}</span><div><p className="text-sm font-medium">{step.label} <span className="text-xs font-normal text-muted-foreground">· {step.state.replaceAll("_", " ")}</span></p><p className="text-xs leading-5 text-muted-foreground">{step.detail}</p></div></div>)}
-          </CardContent></Card>
-          <ProgressEditor key={`${claim.id}:${claim.version}`} claimId={claim.id} claimNumber={claim.claimNumber} initialSteps={progress.filter((s) => !s.isSystem)} role={role} readOnly={demo || !staff || closed} />
-          {staff && !closed && <ClaimUpdateComposer claimId={claim.id} disabled={demo || uploading} />}
-          {(claim.outcomeReason || claim.settlementReference) && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Recorded outcome</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                <Badge variant="secondary">
-                  {claim.outcomeSource === "simulated"
-                    ? "Simulated outcome"
-                    : "Manually recorded outcome"}
-                </Badge>
-                {claim.outcomeReason && <p>{claim.outcomeReason}</p>}
-                {claim.status === "settled" &&
-                claim.settlementAmount &&
-                claim.settlementReference ? (
-                  <>
-                    <p className="font-semibold">
-                      KES{" "}
-                      {Number(claim.settlementAmount).toLocaleString("en-KE", {
-                        minimumFractionDigits: 2,
-                      })}
-                    </p>
-                    <p className="break-all">
-                      Reference: {claim.settlementReference}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {claim.outcomeSource === "simulated"
-                        ? "Demonstration only. No payment was made."
-                        : "An external settlement was recorded by staff. The portal has not verified or dispatched a payment."}
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-muted-foreground">
-                    No settlement with an amount and evidence reference has been
-                    recorded.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          )}
-          <Card>
-            <CardHeader>
-              <CardTitle>Insurer handoff</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <p>
-                {claim.carrierHandoffState === "not_sent"
-                  ? "No handoff recorded"
-                  : claim.carrierHandoffState === "simulated"
-                    ? "Simulated handoff"
-                    : "Manual handoff recorded"}
-              </p>
-              {claim.carrierReference && (
-                <p className="break-all">Reference: {claim.carrierReference}</p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Insurance company integration is outside this prototype.
-              </p>
-            </CardContent>
-          </Card>
-          {staff && !demo && (
-            <StatusEditor
-              key={`${claim.id}:${claim.version}`}
-              claimId={claim.id}
-              claimNumber={claim.claimNumber}
-              currentStatus={claim.status as ClaimStatus}
-              role={role}
-            />
-          )}
-          {staff && (canAssess || claim.assessmentSummary) && (
-            <Card>
-              <CardHeader>
-                <CardTitle id="assessment">Assessment</CardTitle>
-                <CardDescription>
-                  Internal review summary. Estimates do not establish coverage
-                  or payment.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {claim.assessmentSummary && (
-                  <p className="whitespace-pre-wrap rounded-lg bg-muted p-3 text-sm">
-                    {claim.assessmentSummary}
-                  </p>
-                )}
-                {!canAssess && claim.estimatedLossAmount && (
-                  <p className="text-sm">
-                    Estimated loss: KES {claim.estimatedLossAmount}
-                  </p>
-                )}
-                {canAssess && (
-                  <>
-                    <Label htmlFor="loss-estimate">
-                      Estimated loss (KES, optional)
-                    </Label>
-                    <Input
-                      id="loss-estimate"
-                      disabled={disabled}
-                      inputMode="decimal"
-                      value={lossEstimate}
-                      onChange={(e) => setLossEstimate(e.target.value)}
-                      maxLength={20}
-                    />
-                    <TextAction
-                      id="assessment-summary"
-                      title="Record or revise assessment"
-                      label="Explain the evidence, review and remaining uncertainties"
-                      button="Save assessment"
-                      minLength={20}
-                      disabled={disabled}
-                      onSubmit={(text) =>
-                        recordClaimAssessment(claim.id, {
-                          summary: text,
-                          estimatedLossAmount: lossEstimate,
-                        })
-                      }
-                    />
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          )}
           {staff && reviewOpen && (
             <Card>
               <CardHeader>
@@ -943,43 +560,86 @@ export function ClaimWorkspace({
               </CardContent>
             </Card>
           )}
-          {staff && !closed && (
+        </Tabs.Content>
+        <Tabs.Content value="work" forceMount className="space-y-6 outline-none data-[state=inactive]:hidden">
+          <div><h2 className="text-xl font-semibold">{staff ? "Work the claim" : "Claim progress & history"}</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">{staff ? "Record an activity and its next action. When that action is finished, record its result or follow-up. Each entry updates the policyholder’s history automatically." : "See what has happened, who acts next, the expected update time and the outcome of each action."}</p></div>
+          {recommendation && !closed && claim.status !== "approved" && <Card className="border-amber-500/30"><CardHeader><CardTitle>A work result needs a claim decision</CardTitle><CardDescription>{recommendation.result === "recommend_rejection" ? "Rejection has been recommended. The claim has not been rejected." : "Approval has been recommended. The claim has not been approved."}</CardDescription></CardHeader><CardContent className="space-y-3"><p className="whitespace-pre-wrap text-base leading-7">{recommendation.summary}</p>{staff && <Button variant="outline" onClick={() => setCaseAction("review")}>Review findings & decide claim</Button>}</CardContent></Card>}
+          <RecordedOutcome claim={claim} />
+          {staff && <div className="flex flex-wrap gap-2" aria-label="Case actions"><Button variant={caseAction === "review" ? "default" : "outline"} aria-pressed={caseAction === "review"} onClick={() => setCaseAction(caseAction === "review" ? null : "review")}>Review findings & decide claim</Button>{!closed && <Button variant={caseAction === "message" ? "default" : "outline"} aria-pressed={caseAction === "message"} onClick={() => setCaseAction(caseAction === "message" ? null : "message")}>Message / internal note</Button>}<Button variant="outline" onClick={() => setActiveTab("evidence")}>Inspect evidence / request information</Button></div>}
+          {staff && <section id="case-review" hidden={caseAction !== "review"} className="scroll-mt-36 space-y-6">
+            {claim.estimatedLossAmount && <Card><CardHeader><CardTitle>Recorded assessed cost</CardTitle><CardDescription>The assessed cost and its source are recorded with the relevant work result.</CardDescription></CardHeader><CardContent><p className="text-lg font-semibold">KES {Number(claim.estimatedLossAmount).toLocaleString("en-KE", { minimumFractionDigits: 2 })}</p>{costResult ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6">Source: {costResult.assessmentBasis} · Recorded {formatDate(costResult.createdAt)}</p> : <p className="mt-2 text-sm text-muted-foreground">Previously recorded figure; no source has been linked to a work result.</p>}</CardContent></Card>}
+          {staff && (canAssess || claim.assessmentSummary) && (
             <Card>
               <CardHeader>
-                <CardTitle>Add a note</CardTitle>
+                <CardTitle id="assessment">Assessment</CardTitle>
+                <CardDescription>
+                  Internal review summary. Estimates do not establish coverage
+                  or payment.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <Label htmlFor="note-visibility">Who can read it?</Label>
-                <select
-                  id="note-visibility"
-                  disabled={disabled}
-                  className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-                  value={noteVisibility}
-                  onChange={(e) =>
-                    setNoteVisibility(e.target.value as "public" | "internal")
-                  }
-                >
-                  <option value="public">Policyholder and staff</option>
-                  <option value="internal">Staff only</option>
-                </select>
-                <TextAction
-                  id="staff-note"
-                  title={
-                    noteVisibility === "internal"
-                      ? "Internal note"
-                      : "Message to policyholder"
-                  }
-                  label="Message"
-                  minLength={2}
-                  button="Save note"
-                  disabled={disabled}
-                  onSubmit={(text) =>
-                    addClaimNote(claim.id, text, noteVisibility)
-                  }
-                />
+                {claim.assessmentSummary && (
+                  <p className="whitespace-pre-wrap rounded-lg bg-muted p-3 text-sm">
+                    {claim.assessmentSummary}
+                  </p>
+                )}
+                {canAssess && (
+                  <>
+                    <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={completeReview} onChange={(event) => setCompleteReview(event.target.checked)} disabled={disabled} />Review is complete — submit these findings for a manager’s decision</label>
+                    <TextAction
+                      key={claim.assessedAt ?? "new-assessment"}
+                      id="assessment-summary"
+                      initialText={claim.assessmentSummary ?? recommendation?.summary ?? ""}
+                      maxLength={5000}
+                      title="Record or revise assessment"
+                      label="Explain the evidence, review and remaining uncertainties"
+                      button={completeReview ? "Submit findings for decision" : "Save assessment findings"}
+                      minLength={20}
+                      disabled={disabled}
+                      onSubmit={(text) =>
+                        recordClaimAssessment(claim.id, {
+                          summary: text,
+                          completeReview,
+                        })
+                      }
+                    />
+                  </>
+                )}
               </CardContent>
             </Card>
           )}
+          {!canAssess && !claim.assessmentSummary && <p className="rounded-xl border bg-card p-6 text-base">{closed ? "This claim is closed. A manager must reopen review before an assessment can be recorded." : claim.status === "pending" ? "Assign this claim to an agent before recording an assessment." : "The assessment stage has ended. Review the recorded outcome or update the claim stage below."}</p>}
+          <div id="claim-stage" className="grid scroll-mt-36 items-start gap-6 lg:grid-cols-2">
+          {staff && !demo && (
+            <StatusEditor
+              key={`${claim.id}:${claim.version}`}
+              claimId={claim.id}
+              claimNumber={claim.claimNumber}
+              currentStatus={claim.status as ClaimStatus}
+              role={role}
+              assessmentSummary={claim.assessmentSummary ?? recommendation?.summary ?? null}
+            />
+          )}
+          <details className="rounded-xl border p-5"><summary className="cursor-pointer text-sm font-medium text-primary">Insurer handoff details</summary><div className="mt-5 space-y-5">          <Card>
+            <CardHeader>
+              <CardTitle>Insurer handoff</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <p>
+                {claim.carrierHandoffState === "not_sent"
+                  ? "No handoff recorded"
+                  : claim.carrierHandoffState === "simulated"
+                    ? "Simulated handoff"
+                    : "Manual handoff recorded"}
+              </p>
+              {claim.carrierReference && (
+                <p className="break-all">Reference: {claim.carrierReference}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Insurance company integration is outside this prototype.
+              </p>
+            </CardContent>
+          </Card>
           {staff && !closed && (
             <Card>
               <CardHeader>
@@ -1024,6 +684,127 @@ export function ClaimWorkspace({
               </CardContent>
             </Card>
           )}
+</div></details>
+          <RecordedOutcome claim={claim} />
+          </div>
+          </section>}
+          {staff && <section hidden={caseAction !== "message"}>
+          {staff && !closed && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Add a note</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Label htmlFor="note-visibility">Who can read it?</Label>
+                <select
+                  id="note-visibility"
+                  disabled={disabled}
+                  className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                  value={noteVisibility}
+                  onChange={(e) =>
+                    setNoteVisibility(e.target.value as "public" | "internal")
+                  }
+                >
+                  <option value="public">Policyholder and staff</option>
+                  <option value="internal">Staff only</option>
+                </select>
+                <TextAction
+                  id="staff-note"
+                  title={
+                    noteVisibility === "internal"
+                      ? "Internal note"
+                      : "Message to policyholder"
+                  }
+                  label="Message"
+                  minLength={2}
+                  button="Save note"
+                  disabled={disabled}
+                  onSubmit={(text) =>
+                    addClaimNote(claim.id, text, noteVisibility)
+                  }
+                />
+              </CardContent>
+            </Card>
+          )}
+          </section>}
+          <ProgressEditor key={`${claim.id}:${claim.version}`} claimId={claim.id} claimNumber={claim.claimNumber} initialSteps={progress.filter((step) => !step.isSystem)} events={events} documents={documents} role={role} readOnly={demo || !staff || closed} onReviewDecision={staff ? () => { setCaseAction("review"); window.requestAnimationFrame(() => document.getElementById("case-review")?.scrollIntoView({ block: "start" })); } : undefined} />
+          <Card id="claim-activity">
+            <CardHeader>
+              <CardTitle>
+                {staff ? "Case history" : "Your claim history"}
+              </CardTitle>
+              <CardDescription>
+                {staff
+                  ? "Internal activity is labeled and visible only to staff with access."
+                  : "Updates, replies and amendments visible to you."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <label className="block text-sm">Filter activity
+                <select value={activityFilter} onChange={(e) => setActivityFilter(e.target.value)} className="ml-3 rounded-md border bg-background p-2">
+                  <option value="all">All activity</option><option value="updates">Progress updates</option><option value="documents">Documents</option><option value="messages">Messages</option>{staff && <option value="internal">Internal only</option>}
+                </select>
+              </label>
+              {[
+                ...events.map((event) => ({
+                  id: event.id,
+                  content: event.content,
+                  at: event.createdAt,
+                  visibility: event.visibility,
+                  label: `${readable(event.type.replaceAll("_", " "))} · ${event.authorName}`,
+                  kind: event.type,
+                  update: event.type === "progress_update" ? claimUpdateSchema.safeParse(event.metadata) : null,
+                })),
+                ...notes.map((note) => ({
+                  id: note.id,
+                  content: note.content,
+                  at: note.createdAt,
+                  visibility: note.visibility,
+                  label: `Message from ${note.authorName}`,
+                  kind: "message", update: null,
+                })),
+              ]
+                .filter((item) => activityFilter === "all" || (activityFilter === "updates" ? item.kind === "progress_update" || item.kind.startsWith("task_") || item.kind === "assessment_submitted" || item.kind === "status_changed" : activityFilter === "documents" ? item.kind.startsWith("document_") : activityFilter === "messages" ? item.kind === "message" || item.kind === "amendment" : item.visibility === "internal"))
+                .sort((a, b) => b.at.localeCompare(a.at))
+                .map((item) => (
+                  <div
+                    key={item.id}
+                    className="relative rounded-r-lg border-l-2 border-primary/30 bg-muted/20 py-3 pl-4 pr-3"
+                  >
+                    <p className="text-xs text-muted-foreground">
+                      {formatDate(item.at)} · {item.label}
+                      {item.visibility === "internal" ? " · Internal" : ""}
+                    </p>
+                    <p className="mt-1 whitespace-pre-wrap break-words text-sm">
+                      {item.content}
+                    </p>
+                    {item.update?.success && <div className="mt-3"><UpdateDetails update={item.update.data} /></div>}
+                  </div>
+                ))}
+            </CardContent>
+          </Card>
+          {!closed && !staff && <Card><CardHeader><CardTitle>Ask your claims team</CardTitle><CardDescription>For questions or general information. Use the request reply above when answering a specific information request.</CardDescription></CardHeader><CardContent><TextAction id="policyholder-message" title="Message to your agent" label="Your question or update" minLength={2} button="Send message" disabled={disabled} onSubmit={(text) => addClaimNote(claim.id, text, "public")} /></CardContent></Card>}
+          {!closed && !staff && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Add an amendment</CardTitle>
+                <CardDescription>
+                  Correct or add information while preserving your original
+                  report.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <TextAction
+                  id="amendment"
+                  title="Additional information"
+                  label="What would you like to correct or add?"
+                  button="Save amendment"
+                  disabled={disabled}
+                  onSubmit={(text) => addClaimAmendment(claim.id, text)}
+                />
+              </CardContent>
+            </Card>
+          )}
           {!staff && !closed && !claim.withdrawalRequestedAt && (
             <Card>
               <CardHeader>
@@ -1045,10 +826,55 @@ export function ClaimWorkspace({
               </CardContent>
             </Card>
           )}
-        </aside>
-      </div>
+        </Tabs.Content>
+      </Tabs.Root>
     </div>
   );
+}
+
+function RecordedOutcome({ claim }: { claim: ClaimWorkspaceData["claim"] }) {
+  return <>
+          {(claim.outcomeReason || claim.settlementReference) && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Recorded outcome</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <Badge variant="secondary">
+                  {claim.outcomeSource === "simulated"
+                    ? "Simulated outcome"
+                    : "Manually recorded outcome"}
+                </Badge>
+                {claim.outcomeReason && <p>{claim.outcomeReason}</p>}
+                {claim.status === "settled" &&
+                claim.settlementAmount &&
+                claim.settlementReference ? (
+                  <>
+                    <p className="font-semibold">
+                      KES{" "}
+                      {Number(claim.settlementAmount).toLocaleString("en-KE", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </p>
+                    <p className="break-all">
+                      Reference: {claim.settlementReference}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {claim.outcomeSource === "simulated"
+                        ? "Demonstration only. No payment was made."
+                        : "An external settlement was recorded by staff. The portal has not verified or dispatched a payment."}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">
+                    No settlement with an amount and evidence reference has been
+                    recorded.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+  </>;
 }
 
 function DocumentReview({
@@ -1062,8 +888,9 @@ function DocumentReview({
     "accepted" | "needs_replacement" | "waived"
   >(doc.uploadState === "ready" ? "accepted" : "waived");
   return (
-    <div className="space-y-3 rounded-lg border p-3">
-      <p className="break-all text-sm font-medium">{doc.name}</p>
+    <div className="space-y-4 rounded-xl border bg-card p-6">
+      <h3 className="text-base font-semibold">Record evidence inspection</h3>
+      <p className="text-sm leading-6 text-muted-foreground">Inspect the original before accepting it. The result and inspection note are visible to the policyholder.</p>
       <Label htmlFor={`review-${doc.id}`}>Inspection result</Label>
       <select
         id={`review-${doc.id}`}
@@ -1089,6 +916,7 @@ function DocumentReview({
         label="Inspection note or replacement instructions"
         button="Save inspection"
         minLength={5}
+        maxLength={2000}
         disabled={disabled || doc.uploadState === "uploading"}
         onSubmit={(text) =>
           reviewClaimAttachment(doc.id, { status, note: text })

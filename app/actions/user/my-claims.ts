@@ -15,6 +15,9 @@ import {
   claimProgressSteps,
   claimNotifications,
   evidenceRequests,
+  motorClaimDetails,
+  burglaryClaimDetails,
+  burglaryLossItems,
 } from "@/db/schema";
 import { and, asc, desc, eq, ne, getTableColumns, sql } from "drizzle-orm";
 import { requireSession } from "@/lib/session";
@@ -273,12 +276,35 @@ export async function getMyClaimAttachments(id: string) {
     reviewStatus: a.reviewStatus,
     reviewNote: a.reviewNote,
     uploadedAt: a.createdAt.toISOString(),
+    updatedAt: a.updatedAt.toISOString(),
   }));
 }
 
 export async function getClaimWorkspace(id: string) {
   const session = await requireSession();
   const claim = await requireClaimAccess(session, z.string().uuid().parse(id));
+  // Older reports used the detail tables before submission snapshots existed.
+  // Recover them for display without changing the original claim record.
+  const original = claim.originalSubmission && Object.keys(claim.originalSubmission).length ? claim.originalSubmission : null;
+  const saved = claim.formData && Object.keys(claim.formData).length ? claim.formData : null;
+  let submittedReport = original ?? saved;
+  let reportSource: "original" | "saved" | "legacy" | "unavailable" =
+    original ? "original" : saved ? "saved" : "unavailable";
+  if (!submittedReport) {
+    const table = claim.policyType === "motor" ? motorClaimDetails : burglaryClaimDetails;
+    const [details] = await db.select().from(table).where(eq(table.claimId, id)).limit(1);
+    if (details) {
+      submittedReport = { ...details, description: claim.description, contactPhone: claim.contactPhone };
+      if (claim.policyType === "burglary") {
+        submittedReport.lossItems = await db.select().from(burglaryLossItems)
+          .where(eq(burglaryLossItems.burglaryDetailId, details.id));
+      }
+      reportSource = "legacy";
+    } else {
+      submittedReport = claim.description ? { description: claim.description, contactPhone: claim.contactPhone, incidentDate: claim.incidentDate } : null;
+      reportSource = submittedReport ? "saved" : "unavailable";
+    }
+  }
   const publicFilter =
     session.role === "user" ? eq(claimEvents.visibility, "public") : undefined;
   const noteFilter =
@@ -328,6 +354,8 @@ export async function getClaimWorkspace(id: string) {
   let storageReady = true;
   try { storageConfiguration(process.env); } catch { storageReady = false; }
   return {
+    submittedReport,
+    reportSource,
     storageReady,
     claim: {
       ...claim,

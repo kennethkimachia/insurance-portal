@@ -72,6 +72,8 @@ export function demoWorkspace(
   const staff = role !== "user";
   return {
     role,
+    submittedReport: form,
+    reportSource: "original",
     storageReady: false,
     claim: {
       id: DEMO_IDS.claim,
@@ -205,6 +207,7 @@ export function demoWorkspace(
         reviewStatus: "pending",
         reviewNote: null,
         uploadedAt: time,
+        updatedAt: time,
       },
     ],
     progress: [

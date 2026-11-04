@@ -1,60 +1,49 @@
 import { NextResponse } from "next/server";
 import { getClaimWorkspace } from "@/app/actions/user/my-claims";
+import { requireSession } from "@/lib/session";
+import { getAuthorizedClaimAttachment } from "@/lib/claim-attachment-access";
+import { streamClaimFile } from "@/lib/storage";
+import { assertPackageSize, createClaimPackage, verifiedDocumentBytes } from "@/lib/claim-export-package";
+import { exportFilename } from "@/lib/claim-export-report";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ claimId: string }> },
 ) {
   try {
     const { claimId } = await context.params;
+    const session = await requireSession();
     const data = await getClaimWorkspace(claimId);
-    // URLs, storage keys and private staff activity are excluded from a carrier package.
-    const packet = {
-      exportedAt: new Date().toISOString(),
-      source: "Insurance portal prototype; manual export only",
-      receipt: {
-        claimId: data.claim.id,
-        reference: data.claim.claimNumber,
-        submittedAt: data.claim.submittedAt,
-        status: data.claim.status,
-      },
-      policy: data.claim.policySnapshot,
-      policyholder: {
-        name: data.claim.policyholderName,
-        email: data.claim.policyholderEmail,
-        contactPhone: data.claim.contactPhone,
-      },
-      originalReport: data.claim.originalSubmission,
-      amendments: data.events.filter(
-        (e) => e.type === "amendment" && e.visibility === "public",
-      ),
-      progressUpdates: data.events.filter((e) => e.type === "progress_update" && e.visibility === "public"),
-      supportingTasks: data.progress.filter((step) => !step.isSystem),
-      evidence: data.documents,
-      requests: data.requests,
-      handoff: {
-        source: data.claim.carrierHandoffState,
-        reference: data.claim.carrierReference,
-      },
-      outcome: {
-        source: data.claim.outcomeSource,
-        reason: data.claim.outcomeReason,
-        settlementAmount: data.claim.settlementAmount,
-        settlementReference: data.claim.settlementReference,
-      },
-    };
-    return new NextResponse(JSON.stringify(packet, null, 2), {
+    try {
+      assertPackageSize(data.documents);
+    } catch (error) {
+      return NextResponse.json({ error: (error as Error).message }, { status: 413, headers: { "Cache-Control": "private, no-store" } });
+    }
+    const body = createClaimPackage(data, async function* (document, signal) {
+      // Recheck claim membership, document state and storage prefix at read time.
+      // Never place signed URLs, storage keys or portal-only links in the report.
+      const attachment = await getAuthorizedClaimAttachment(session, claimId, document.id);
+      yield* verifiedDocumentBytes(
+        streamClaimFile(attachment.storageKey, signal),
+        attachment.sizeBytes,
+        attachment.contentSha256,
+      );
+    }, new Date().toISOString(), request.signal);
+    const filename = `${exportFilename(data.claim.claimNumber)}-claim-report.zip`;
+    return new NextResponse(body, {
       headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${data.claim.claimNumber}.json"`,
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="claim-report.zip"; filename*=UTF-8''${encodeURIComponent(filename).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)}`,
         "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch {
     return NextResponse.json(
       { error: "Claim not found or access denied" },
-      { status: 404 },
+      { status: 404, headers: { "Cache-Control": "private, no-store" } },
     );
   }
 }

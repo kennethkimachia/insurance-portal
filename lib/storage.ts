@@ -34,6 +34,23 @@ export async function deleteFile(key: string) {
     const { s3, bucket } = getClaimStorage();
     return s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
 }
+/** Server-side original bytes for authorized claim packages; never exposed as a URL. */
+export async function* streamClaimFile(key: string, signal: AbortSignal) {
+    const { s3, bucket } = getClaimStorage();
+    const result = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }), { abortSignal: signal });
+    if (!result.Body) throw new Error("Document unavailable. Retry the export.");
+    const reader = result.Body.transformToWebStream().getReader();
+    try {
+        while (true) {
+            const chunk = await reader.read();
+            if (chunk.done) break;
+            yield chunk.value;
+        }
+    } finally {
+        await reader.cancel().catch(() => undefined);
+        reader.releaseLock();
+    }
+}
 export function buildClaimFileKey(orgId: string, claimId: string, originalFilename: string) {
     const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
     if (!uuid.test(orgId) || !uuid.test(claimId))

@@ -34,19 +34,21 @@ export const closedClaimStatuses: ClaimStatus[] = [
 ];
 export const allowedStatusTransitions: Record<ClaimStatus, ClaimStatus[]> = {
   draft: [],
-  pending: ["assigned", "withdrawn"],
+  pending: ["assigned", "rejected", "withdrawn"],
   assigned: [
     "awaiting_information",
     "surveyor_dispatched",
     "under_review",
+    "rejected",
     "withdrawn",
   ],
-  awaiting_information: ["assigned", "under_review", "withdrawn"],
-  surveyor_dispatched: ["awaiting_information", "under_review", "withdrawn"],
+  awaiting_information: ["assigned", "under_review", "rejected", "withdrawn"],
+  surveyor_dispatched: ["awaiting_information", "under_review", "rejected", "withdrawn"],
   under_review: [
     "awaiting_information",
     "surveyor_dispatched",
     "assessment_complete",
+    "rejected",
     "withdrawn",
   ],
   assessment_complete: ["under_review", "approved", "rejected", "withdrawn"],
@@ -76,7 +78,7 @@ export function availableTransitions(status: ClaimStatus, role: Role) {
     (next) =>
       // Assignment and information requests use their own audited operations.
       !(status === "pending" && next === "assigned") && next !== "awaiting_information" &&
-      !(status === "awaiting_information" && next !== "withdrawn") &&
+      !(status === "awaiting_information" && !["withdrawn", "rejected"].includes(next)) &&
       (isManager(role) || !["approved", "rejected", "settled", "withdrawn"].includes(next)),
   );
 }
@@ -104,6 +106,7 @@ export interface ClaimReadiness {
   assessmentSummary: string | null;
   openEvidenceRequests: number;
   unreviewedDocuments: number;
+  openWorkItems?: number;
 }
 export function validateClaimReadiness(
   next: ClaimStatus,
@@ -116,6 +119,8 @@ export function validateClaimReadiness(
   )
     return "Record an assessment summary before completing an assessment or recording an outcome";
   if (["assessment_complete", "approved", "settled"].includes(next)) {
+    if ((readiness.openWorkItems ?? 0) > 0)
+      return "Record a result or explicitly close outstanding work before completing review or recording approval or settlement";
     if (readiness.openEvidenceRequests > 0)
       return "Resolve all outstanding information requests first";
     if (readiness.unreviewedDocuments > 0)

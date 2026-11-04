@@ -51,7 +51,12 @@ export async function getMyAssignedClaims() {
       overdueRequestCount: sql<number>`(SELECT count(*)::int FROM evidence_requests er WHERE er.claim_id = ${claims.id} AND er.status <> 'resolved' AND er.due_at < now())`,
       respondedRequestCount: sql<number>`(SELECT count(*)::int FROM evidence_requests er WHERE er.claim_id = ${claims.id} AND er.status = 'responded')`,
       unreviewedDocumentCount: sql<number>`(SELECT count(*)::int FROM claim_attachments ca WHERE ca.claim_id = ${claims.id} AND ca.review_status NOT IN ('accepted','waived'))`,
-      nextUpdateAt: sql<string | null>`(SELECT ce.metadata->>'nextUpdateAt' FROM claim_events ce WHERE ce.claim_id = ${claims.id} AND ce.type = 'progress_update' AND ce.visibility = 'public' ORDER BY ce.created_at DESC, ce.id DESC LIMIT 1)`,
+      nextUpdateAt: sql<string | null>`coalesce(
+        (SELECT min(nullif(ce.metadata->>'followUpAt','')) FROM claim_events ce
+          JOIN claim_progress_steps cps ON cps.id::text = coalesce(ce.metadata->>'followUpStepId', ce.metadata->>'stepId')
+          WHERE ce.claim_id = ${claims.id} AND cps.claim_id = ${claims.id} AND NOT cps.is_completed
+            AND ce.type IN ('task_created','task_result') AND ce.visibility = 'public'),
+        (SELECT ce.metadata->>'nextUpdateAt' FROM claim_events ce WHERE ce.claim_id = ${claims.id} AND ce.type = 'progress_update' AND ce.visibility = 'public' ORDER BY ce.created_at DESC, ce.id DESC LIMIT 1))`,
       withdrawalRequestedAt: claims.withdrawalRequestedAt,
       updatedAt: claims.updatedAt,
       description: claims.description,
@@ -172,6 +177,7 @@ export interface OutcomeDetails {
   settlementAmount?: string;
   settlementReference?: string;
   carrierReference?: string;
+  assessmentSummary?: string;
 }
 
 export async function updateClaimStatus(
@@ -204,6 +210,9 @@ export async function updateClaimStatus(
       };
     const settlementAmount = details?.settlementAmount?.trim();
     const reference = details?.settlementReference?.trim();
+    const assessment = details?.assessmentSummary?.trim();
+    if (assessment !== undefined && (newStatus !== "rejected" || assessment.length < 20 || assessment.length > 5000))
+      return { success: false, error: "A rejection must include assessment findings of 20–5,000 characters." };
     if (
       newStatus === "settled" &&
       (!settlementAmount ||
@@ -227,7 +236,7 @@ export async function updateClaimStatus(
         claimId,
         claim.version,
       );
-      const [[requests], [documents]] = await Promise.all([
+      const [[requests], [documents], [work]] = await Promise.all([
         tx
           .select({ count: sql<number>`COUNT(*)::int` })
           .from(evidenceRequests)
@@ -252,11 +261,13 @@ export async function updateClaimStatus(
               ),
             ),
           ),
+        tx.select({ count: sql<number>`count(*)::int` }).from(claimProgressSteps).where(and(eq(claimProgressSteps.claimId, claimId), eq(claimProgressSteps.isSystem, false), eq(claimProgressSteps.isCompleted, false))),
       ]);
       const readinessError = validateClaimReadiness(newStatus, {
-        assessmentSummary: fresh.assessmentSummary,
+        assessmentSummary: assessment ?? fresh.assessmentSummary,
         openEvidenceRequests: requests.count,
         unreviewedDocuments: documents.count,
+        openWorkItems: work.count,
       });
       if (readinessError) throw new Error(readinessError);
       const [updated] = await tx
@@ -264,6 +275,7 @@ export async function updateClaimStatus(
         .set({
           status: newStatus,
           version: sql`${claims.version} + 1`,
+          ...(assessment ? { assessmentSummary: assessment, assessedBy: session.id, assessedAt: new Date() } : {}),
           ...(outcome
             ? { outcomeReason: reason!.trim(), outcomeSource: details!.source }
             : {}),
@@ -301,6 +313,18 @@ export async function updateClaimStatus(
         throw new Error(
           "This claim changed. Refresh before updating its status.",
         );
+      if (assessment) await tx.insert(claimEvents).values({ claimId, actorId: session.id, type: "assessment_recorded", visibility: "internal", content: assessment, metadata: { previousSummary: fresh.assessmentSummary, recordedWithDecision: true } });
+      if (closedClaimStatuses.includes(newStatus)) {
+        if (requests.count > 0) {
+          await tx.update(evidenceRequests).set({ status: "resolved", resolvedBy: session.id, resolvedAt: new Date(), updatedAt: new Date() }).where(and(eq(evidenceRequests.claimId, claimId), ne(evidenceRequests.status, "resolved")));
+          await tx.insert(claimEvents).values({ claimId, actorId: session.id, type: "information_requests_closed", visibility: "public", content: `Outstanding information requests were closed with the claim decision (${statusLabels[newStatus].toLowerCase()}). No further response is required. This does not establish that the missing evidence was supplied.`, metadata: { count: requests.count, closedByDecision: newStatus } });
+        }
+        const unfinished = await tx.select().from(claimProgressSteps).where(and(eq(claimProgressSteps.claimId, claimId), eq(claimProgressSteps.isSystem, false), eq(claimProgressSteps.isCompleted, false)));
+        for (const step of unfinished) {
+          await tx.update(claimProgressSteps).set({ isCompleted: true, completedAt: new Date(), completedBy: session.id }).where(eq(claimProgressSteps.id, step.id));
+          await tx.insert(claimEvents).values({ claimId, actorId: session.id, type: "task_result", visibility: "public", content: `${step.label}: work closed because the claim was ${statusLabels[newStatus].toLowerCase()}. This does not mean the work was completed.`, metadata: { stepId: step.id, result: "cancelled", summary: `Claim ${statusLabels[newStatus].toLowerCase()}: ${reason?.trim().slice(0, 3600) || "Final outcome recorded"}. Remaining work closed without completion.`, followUpTitle: "", followUpAt: "", responsibleParty: "none", closedByDecision: newStatus } });
+        }
+      }
       await tx
         .update(claimProgressSteps)
         .set({

@@ -2,23 +2,17 @@
 
 import { actionError } from "@/lib/action-errors";
 import { db } from "@/db";
-import { claims, claimEvents } from "@/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { claims, claimEvents, claimAttachments, evidenceRequests, claimNotifications, claimProgressSteps } from "@/db/schema";
+import { and, eq, sql, ne, notInArray, or } from "drizzle-orm";
 import { requireSession } from "@/lib/session";
 import { requireClaimAccess, lockClaimForMutation } from "@/lib/claim-access";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
+import { validateClaimReadiness } from "@/lib/claim-workflow";
 const schema = z.object({
   summary: z.string().trim().min(20).max(5000),
-  estimatedLossAmount: z
-    .string()
-    .trim()
-    .regex(/^(?:|\d{1,12}(?:\.\d{1,2})?)$/)
-    .refine(
-      (v) => v === "" || Number(v) > 0,
-      "Use a positive KES estimate or leave it unknown",
-    )
-    .default(""),
+  completeReview: z.boolean().default(false),
+
 });
 
 export async function recordClaimAssessment(
@@ -45,14 +39,24 @@ export async function recordClaimAssessment(
       );
     const data = schema.parse(input);
     await db.transaction(async (tx) => {
-      await lockClaimForMutation(tx, session, claimId, claim.version);
+      const fresh = await lockClaimForMutation(tx, session, claimId, claim.version);
+      if (!["assigned", "surveyor_dispatched", "under_review", "awaiting_information"].includes(fresh.status)) throw new Error("Reopen the review before changing its assessment.");
+      if (data.completeReview) {
+        const [[requests], [documents], [work]] = await Promise.all([
+          tx.select({ count: sql<number>`count(*)::int` }).from(evidenceRequests).where(and(eq(evidenceRequests.claimId, claimId), ne(evidenceRequests.status, "resolved"))),
+          tx.select({ count: sql<number>`count(*)::int` }).from(claimAttachments).where(and(eq(claimAttachments.claimId, claimId), or(eq(claimAttachments.uploadState, "uploading"), notInArray(claimAttachments.reviewStatus, ["accepted", "waived"])))),
+          tx.select({ count: sql<number>`count(*)::int` }).from(claimProgressSteps).where(and(eq(claimProgressSteps.claimId, claimId), eq(claimProgressSteps.isSystem, false), eq(claimProgressSteps.isCompleted, false))),
+        ]);
+        const error = validateClaimReadiness("assessment_complete", { assessmentSummary: data.summary, openEvidenceRequests: requests.count, unreviewedDocuments: documents.count, openWorkItems: work.count });
+        if (error) throw new Error(error);
+      }
       const [updated] = await tx
         .update(claims)
         .set({
           assessmentSummary: data.summary,
-          estimatedLossAmount: data.estimatedLossAmount || null,
           assessedBy: session.id,
           assessedAt: new Date(),
+          ...(data.completeReview ? { status: "assessment_complete" as const } : {}),
           version: sql`${claims.version} + 1`,
         })
         .where(and(eq(claims.id, claimId), eq(claims.version, claim.version)))
@@ -68,10 +72,14 @@ export async function recordClaimAssessment(
           visibility: "internal",
           content: data.summary,
           metadata: {
-            estimatedLossAmount: data.estimatedLossAmount || null,
+            estimatedLossAmount: fresh.estimatedLossAmount,
             previousSummary: claim.assessmentSummary,
           },
         });
+      if (data.completeReview) {
+        await tx.insert(claimEvents).values({ claimId, actorId: session.id, type: "assessment_submitted", visibility: "public", content: "The evidence review is complete. Assessment findings have been submitted for a claims manager’s decision.", metadata: { from: fresh.status, to: "assessment_complete" } });
+        await tx.insert(claimNotifications).values({ claimId, userId: claim.policyholderId, type: "status_change", message: `${claim.claimNumber}: review complete; awaiting a claims manager’s decision.` });
+      }
     });
     revalidatePath(`/claims/${claimId}`);
     revalidatePath("/dashboard");

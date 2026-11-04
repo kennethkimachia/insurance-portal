@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { claimAttachments } from "@/db/schema";
 import { requireClaimAccess } from "./claim-access";
 import type { SessionUser } from "./session";
+import { canInspectEvidence } from "./evidence-presentation";
 
 export class ClaimAttachmentAccessError extends Error {
   constructor(
@@ -44,16 +45,13 @@ export async function getAuthorizedClaimAttachment(
       "Document upload is incomplete. Retry the original file.",
       403,
     );
-  if (
-    attachment.scanState === "rejected" ||
-    (session.role === "user" && attachment.scanState !== "clean")
-  )
+  if (!canInspectEvidence(attachment))
     throw new ClaimAttachmentAccessError(
-      "Document is awaiting review or needs replacement",
+      "Document is blocked or unavailable. Contact your claims team for help.",
       403,
     );
-  // Staff may download pending files for explicit manual inspection. Downloads are
-  // always attachment/octet-stream and never embedded as active browser content.
+  // An authorized policyholder may view received evidence on their own claim
+  // before staff accept it. Downloads and passive previews keep the same controls.
   if (
     !attachment.storageKey.startsWith(
       `${claim.organizationId}/claims/${claimId}/`,

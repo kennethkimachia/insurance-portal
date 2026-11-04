@@ -45,6 +45,7 @@ interface StatusEditorProps {
   claimId?: string;
   role?: Role;
   onStatusChange?: (newStatus: ClaimStatus, notification: string) => void;
+  assessmentSummary?: string | null;
 }
 
 export function StatusEditor({
@@ -53,11 +54,13 @@ export function StatusEditor({
   claimId,
   role = "agent",
   onStatusChange,
+  assessmentSummary,
 }: StatusEditorProps) {
   const router = useRouter();
   const [status, setStatus] = useState(currentStatus);
   const [next, setNext] = useState<ClaimStatus | "">("");
   const [reason, setReason] = useState("");
+  const [assessment, setAssessment] = useState(assessmentSummary ?? "");
   const [source, setSource] = useState<"manual" | "simulated">("manual");
   const [amount, setAmount] = useState("");
   const [reference, setReference] = useState("");
@@ -79,7 +82,7 @@ export function StatusEditor({
           claimId,
           next,
           reason || undefined,
-          { source, settlementAmount: amount, settlementReference: reference },
+          { source, settlementAmount: amount, settlementReference: reference, ...(next === "rejected" ? { assessmentSummary: assessment } : {}) },
         );
         if (!result.success) {
           setError(result.error ?? "Unable to update the claim");
@@ -103,12 +106,18 @@ export function StatusEditor({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">Claim status</CardTitle>
+        <CardTitle className="text-lg">Claim decision & next stage</CardTitle>
         <CardDescription>
           {claimNumber} · {statusLabels[status]}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <p className="text-sm leading-6 text-muted-foreground">{role === "head_agent" || role === "admin" ? "Record the claim decision here. Rejecting requires assessment findings and an explanation to the policyholder; the decision also closes outstanding work." : "Agents record work and recommendations. A claims manager or administrator must approve or reject the claim."}</p>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="destructive" disabled={pending || !transitions.includes("rejected")} onClick={() => { setNext("rejected"); setError(null); }}>Reject claim</Button>
+          <Button variant="outline" disabled={pending || !transitions.includes("approved")} onClick={() => { setNext("approved"); setError(null); }}>Approve claim</Button>
+        </div>
+        {!transitions.includes("approved") && !["approved", "settled", "rejected", "withdrawn"].includes(status) && <p className="text-sm text-muted-foreground">Approval becomes available to a manager after the assessment is complete and evidence requests and inspections are resolved.</p>}
         {status === "pending" && (
           <p className="text-sm text-muted-foreground">
             A claims manager assigns the claim before the agent begins review.
@@ -130,9 +139,9 @@ export function StatusEditor({
           </p>
         ) : (
           <>
-            <label htmlFor="next-status" className="block text-sm font-medium">
-              Next stage
-            </label>
+            <details>
+            <summary className="cursor-pointer text-sm font-medium text-primary">Other claim actions{next ? ` · ${statusLabels[next]}` : ""}</summary>
+            <label htmlFor="next-status" className="mt-3 block text-sm font-medium">Choose an action</label>
             <Select
               value={next}
               onValueChange={(value) => {
@@ -153,6 +162,7 @@ export function StatusEditor({
                 ))}
               </SelectContent>
             </Select>
+            </details>
             {next && (
               <>
                 <label
@@ -172,6 +182,7 @@ export function StatusEditor({
                 />
               </>
             )}
+            {next === "rejected" && <div className="space-y-3"><label htmlFor="decision-assessment" className="block text-sm font-medium">Assessment findings supporting rejection (staff only)</label><Textarea id="decision-assessment" value={assessment} onChange={(event) => setAssessment(event.target.value)} minLength={20} maxLength={5000} rows={5} /><p className="text-sm text-muted-foreground">Describe the evidence and basis for the decision. The explanation to the policyholder above is published with the rejection.</p></div>}
             {isOutcome && (
               <>
                 <label
@@ -240,12 +251,12 @@ export function StatusEditor({
                 pending ||
                 !next ||
                 (needsReason && reason.trim().length < 10) ||
+                (next === "rejected" && assessment.trim().length < 20) ||
                 (next === "settled" && (!amount || reference.trim().length < 3))
               }
               onClick={() => setConfirm(true)}
             >
-              {pending && <Loader2 className="h-4 w-4 animate-spin" />}Save
-              status
+              {pending && <Loader2 className="h-4 w-4 animate-spin" />}{next === "rejected" ? "Review rejection" : next === "approved" ? "Review approval" : "Review next action"}
             </Button>
           </>
         )}
@@ -266,7 +277,7 @@ export function StatusEditor({
       <AlertDialog open={confirm} onOpenChange={setConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirm status update</AlertDialogTitle>
+            <AlertDialogTitle>{next === "rejected" ? "Confirm claim rejection" : "Confirm claim action"}</AlertDialogTitle>
             <AlertDialogDescription>
               Move {claimNumber} from {statusLabels[status]} to{" "}
               {next ? statusLabels[next] : "the selected stage"}? The update
